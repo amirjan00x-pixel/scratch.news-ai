@@ -1,0 +1,7 @@
+project_id = "wmmnimalxhgrapjxvuxk"
+
+[functions.generate-post]
+verify_jwt = false
+
+[functions.aggregate-ai-news]
+verify_jwt = false
