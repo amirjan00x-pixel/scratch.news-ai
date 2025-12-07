@@ -71,3 +71,55 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Environment setup & secrets
+
+This project relies on environment variables for every third-party credential. Follow these steps before running anything locally:
+
+1. Copy each example file and fill in the real values that belong on your machine only:
+   ```bash
+   cp .env.example .env
+   cp server/.env.example server/.env
+   ```
+2. Required variables for the Vite frontend (public, non-sensitive):
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_SERVER_URL` (points to your authenticated fetcher, defaults to `http://localhost:3001`)
+3. Required variables for the server-side fetcher (sensitive – never share):
+   - `VITE_SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `ADMIN_API_KEY`
+   - `API_ALLOWED_ORIGINS`
+   - Optional Hugging Face tuning knobs: `HF_API_TOKEN`, `HF_IMAGE_MODEL`, `HF_IMAGE_ENDPOINT`, `HF_IMAGE_SIZE`, `HF_IMAGE_GUIDANCE`, `HF_IMAGE_NEGATIVE_PROMPT`
+
+`.gitignore` protects every `.env` file so real keys are never committed again. If you previously exposed a key, rotate it in Supabase/Hugging Face immediately before redeploying.
+
+## Securing admin endpoints
+
+Privileged functionality is guarded by rate-limited API-key authentication plus restricted CORS. To keep the installation secure:
+
+1. **Set strong secrets**  
+   - Define a long, random `ADMIN_API_KEY` in `server/.env`. The server refuses to boot without it.  
+   - Keep Supabase service role keys and Hugging Face tokens in the same file—never in Git history.
+2. **Whitelist your domains**  
+   - Populate `API_ALLOWED_ORIGINS` with a comma-separated list (e.g. `http://localhost:5173,http://localhost:3000,https://news.example.com`).  
+   - Only those origins receive CORS approval; other domains are blocked with HTTP 403.
+3. **Trigger fetch jobs safely**  
+   - Use the built-in Admin page (hidden until you authenticate) or call the API directly:  
+     ```bash
+     curl -X POST "$SERVER_URL/api/fetch-news" \
+       -H "x-api-key: $ADMIN_API_KEY"
+     ```  
+   - Requests are limited to 5/min per IP. Exceeding the limit yields HTTP 429.
+4. **Logging & monitoring**  
+   - Unauthorized attempts and blocked origins are logged with IP + route only; secrets are never written to logs.  
+   - Handle failures by checking the server logs or the JSON response—the payload intentionally omits secret data.
+
+Rotate `ADMIN_API_KEY` any time you suspect exposure, then redeploy both server and any long-lived admin clients (they will be forced to re-authenticate).
+
+## Search & filtering
+
+- The header search opens a secure popover and dispatches a `search` custom event with `{ query: string }`. The homepage listens for that event and re-runs the Supabase query immediately.
+- Search requests run through `normalizeSearchQuery`, which trims whitespace and strips reserved SQL characters (commas, parentheses, quotes, `%`, `_`). Empty or malformed input simply returns the latest articles instead of throwing an error.
+- Supabase filtering uses parameterized helpers (`.ilike`, `.or`) across the `title`, `summary`, and `source` columns. Because the query is normalized, user input never appears unescaped inside filter strings, closing off injection vectors.
+- Errors from Supabase are wrapped in a user-friendly message so SQL payloads never reach the client or console logs.

@@ -3,9 +3,12 @@ import { Sparkles } from "lucide-react";
 import { NavLink } from "./NavLink";
 import { NewsletterModal } from "./NewsletterModal";
 import { SearchBar } from "./SearchBar";
+import { useAdminAuth } from "@/context/AdminAuthContext";
+import { SearchEventDetail } from "@/lib/search";
 
 export const Header = () => {
   const [newsletterOpen, setNewsletterOpen] = useState(false);
+  const { isAdmin } = useAdminAuth();
 
   return (
     <header className="bg-background border-b border-border sticky top-0 z-50">
@@ -17,10 +20,13 @@ export const Header = () => {
           </div>
           
           <div className="flex items-center gap-4">
-            <SearchBar onSearch={(query, category, sortBy) => {
-              const event = new CustomEvent('search', { detail: { query, category, sortBy } });
-              window.dispatchEvent(event);
-            }} />
+            <SearchBar
+              onSearch={(query) => {
+                const detail: SearchEventDetail = { query };
+                const event = new CustomEvent<SearchEventDetail>('search', { detail });
+                window.dispatchEvent(event);
+              }}
+            />
             <button 
               onClick={() => setNewsletterOpen(true)}
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -41,6 +47,11 @@ export const Header = () => {
           <NavLink to="/tracker" className="text-sm text-muted-foreground hover:text-foreground transition-colors">AI Tracker</NavLink>
           <NavLink to="/weekly" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Weekly Top 10</NavLink>
           <NavLink to="/history" className="text-sm text-muted-foreground hover:text-foreground transition-colors">AI History</NavLink>
+          {isAdmin && (
+            <NavLink to="/admin" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Admin
+            </NavLink>
+          )}
         </nav>
       </div>
 

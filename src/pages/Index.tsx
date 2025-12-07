@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { fetchNewsArticles, NewsFilter } from "@/services/newsService";
+import { fetchNewsArticles } from "@/services/newsService";
 import { Header } from "@/components/Header";
 import { NewsCard } from "@/components/NewsCard";
 import { CompactNewsCard } from "@/components/CompactNewsCard";
@@ -11,9 +10,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BreakingNewsTicker } from "@/components/BreakingNewsTicker";
 import { CategoryNav } from "@/components/CategoryNav";
 import { formatDistanceToNow } from "date-fns";
-import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NewsImage } from "@/components/NewsImage";
+import { SearchCustomEvent } from "@/lib/search";
 
 const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -21,10 +20,9 @@ const Index = () => {
   const [sortBy, setSortBy] = useState("date");
 
   useEffect(() => {
-    const handleSearch = (event: CustomEvent<NewsFilter>) => {
-      setSearchQuery(event.detail.searchQuery);
-      setSelectedCategory(event.detail.category === "all" ? "All" : event.detail.category);
-      setSortBy(event.detail.sortBy);
+    const handleSearch = (event: Event) => {
+      const customEvent = event as SearchCustomEvent;
+      setSearchQuery(customEvent.detail.query);
     };
     window.addEventListener('search', handleSearch);
     return () => window.removeEventListener('search', handleSearch);

@@ -1,5 +1,5 @@
-
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeSearchQuery } from "@/lib/search";
 
 export interface Article {
     id: string;
@@ -21,7 +21,11 @@ export interface NewsFilter {
     sortBy: string;
 }
 
+const FRIENDLY_ERROR_MESSAGE = "Unable to load news articles right now. Please try again shortly.";
+
 export const fetchNewsArticles = async ({ category, searchQuery, sortBy }: NewsFilter): Promise<Article[]> => {
+    const normalizedQuery = normalizeSearchQuery(searchQuery);
+
     let query = supabase
         .from('news_articles')
         .select('*');
@@ -30,8 +34,15 @@ export const fetchNewsArticles = async ({ category, searchQuery, sortBy }: NewsF
         query = query.eq('category', category);
     }
 
-    if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,summary.ilike.%${searchQuery}%`);
+    if (normalizedQuery) {
+        const likePattern = `%${normalizedQuery}%`;
+        const filters = [
+            `title.ilike.${likePattern}`,
+            `summary.ilike.${likePattern}`,
+            `source.ilike.${likePattern}`,
+        ].join(',');
+
+        query = query.or(filters);
     }
 
     if (sortBy === "importance") {
@@ -45,8 +56,7 @@ export const fetchNewsArticles = async ({ category, searchQuery, sortBy }: NewsF
     const { data, error } = await query.limit(30);
 
     if (error) {
-        console.error("Error fetching news:", error);
-        throw new Error(error.message);
+        throw new Error(FRIENDLY_ERROR_MESSAGE);
     }
 
     return (data as Article[]) || [];
