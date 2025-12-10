@@ -6,6 +6,9 @@ import { CompactNewsCard } from "@/components/CompactNewsCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BreakingNewsTicker } from "@/components/BreakingNewsTicker";
 import { formatDistanceToNow } from "date-fns";
+import { ArticleCategory } from "@/constants/categories";
+
+const GUIDES_CATEGORY: ArticleCategory = "Research";
 
 const Guides = () => {
   const { data: articles, isLoading } = useQuery({
@@ -14,7 +17,7 @@ const Guides = () => {
       const { data, error } = await supabase
         .from("news_articles")
         .select("*")
-        .or("category.ilike.%guide%,category.ilike.%tutorial%,category.ilike.%education%")
+        .eq("category", GUIDES_CATEGORY)
         .order("published_at", { ascending: false });
 
       if (error) throw error;

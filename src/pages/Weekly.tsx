@@ -7,6 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BreakingNewsTicker } from "@/components/BreakingNewsTicker";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { ArticleCategory } from "@/constants/categories";
+
+const WEEKLY_TOOLS_CATEGORY: ArticleCategory = "Technology";
 
 const Weekly = () => {
   // Get top 10 news from the past week
@@ -38,7 +41,7 @@ const Weekly = () => {
       const { data, error } = await supabase
         .from("news_articles")
         .select("*")
-        .or("category.ilike.%tool%,category.ilike.%product%")
+        .eq("category", WEEKLY_TOOLS_CATEGORY)
         .gte("published_at", oneWeekAgo.toISOString())
         .order("importance_score", { ascending: false })
         .limit(5);

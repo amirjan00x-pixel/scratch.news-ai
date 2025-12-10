@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeSearchQuery } from "@/lib/search";
+import { ArticleCategory, isArticleCategory } from "@/constants/categories";
 
 export interface Article {
     id: string;
@@ -16,12 +17,14 @@ export interface Article {
 }
 
 export interface NewsFilter {
-    category: string;
+    category: ArticleCategory | "All";
     searchQuery: string;
     sortBy: string;
 }
 
 const FRIENDLY_ERROR_MESSAGE = "Unable to load news articles right now. Please try again shortly.";
+
+const isAllCategory = (value: string): value is "All" => value === "All";
 
 export const fetchNewsArticles = async ({ category, searchQuery, sortBy }: NewsFilter): Promise<Article[]> => {
     const normalizedQuery = normalizeSearchQuery(searchQuery);
@@ -30,8 +33,13 @@ export const fetchNewsArticles = async ({ category, searchQuery, sortBy }: NewsF
         .from('news_articles')
         .select('*');
 
-    if (category !== "All") {
-        query = query.eq('category', category);
+    if (!isAllCategory(category) && !isArticleCategory(category)) {
+        console.warn(`Unknown category "${category}" requested. Falling back to All.`);
+        category = "All";
+    }
+
+    if (!isAllCategory(category)) {
+        query = query.eq('category', category as ArticleCategory);
     }
 
     if (normalizedQuery) {

@@ -6,6 +6,9 @@ import { Footer } from "@/components/Footer";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BreakingNewsTicker } from "@/components/BreakingNewsTicker";
 import { formatDistanceToNow } from "date-fns";
+import { ArticleCategory } from "@/constants/categories";
+
+const TOOLS_CATEGORY: ArticleCategory = "Technology";
 
 const Tools = () => {
   const { data: articles, isLoading } = useQuery({
@@ -14,7 +17,7 @@ const Tools = () => {
       const { data, error } = await supabase
         .from('news_articles')
         .select('*')
-        .or('category.ilike.%products%,category.ilike.%tools%')
+        .eq('category', TOOLS_CATEGORY)
         .order('published_at', { ascending: false })
         .limit(20);
       

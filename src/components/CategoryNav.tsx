@@ -1,4 +1,6 @@
-const defaultCategories = ["All", "Technology", "Research", "Business", "Ethics", "Products"];
+import { ALL_CATEGORIES } from "@/constants/categories";
+
+const defaultCategories = ALL_CATEGORIES;
 
 export interface CategoryNavProps {
   categories?: string[];

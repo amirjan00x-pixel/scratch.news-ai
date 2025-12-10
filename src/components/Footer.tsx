@@ -17,9 +17,7 @@ export const Footer = () => {
             <ul className="space-y-2 text-sm">
               <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Technology</Link></li>
               <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Research</Link></li>
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Products</Link></li>
               <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Business</Link></li>
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Ethics</Link></li>
             </ul>
           </div>
           

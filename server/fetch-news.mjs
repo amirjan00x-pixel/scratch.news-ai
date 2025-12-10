@@ -5,6 +5,7 @@ import Parser from 'rss-parser';
 import dotenv from 'dotenv';
 import he from 'he';
 import { load as loadHtml } from 'cheerio';
+import categoriesConfig from '../shared/article-categories.json' assert { type: 'json' };
 
 dotenv.config();
 
@@ -21,6 +22,18 @@ if (missingEnv.length) {
         `Missing required environment variables: ${missingEnv.join(', ')}`
     );
 }
+
+const ARTICLE_CATEGORIES = categoriesConfig.articleCategories;
+const CATEGORY_SET = new Set(ARTICLE_CATEGORIES);
+const DEFAULT_CATEGORY = ARTICLE_CATEGORIES[0];
+
+const ensureCategory = (category) => {
+    if (!CATEGORY_SET.has(category)) {
+        console.warn(`Unknown category "${category}" found in feed configuration. Falling back to ${DEFAULT_CATEGORY}.`);
+        return DEFAULT_CATEGORY;
+    }
+    return category;
+};
 
 const app = express();
 const parser = new Parser();
@@ -90,7 +103,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-const RSS_FEEDS = [
+const RAW_RSS_FEEDS = [
     // Major Tech News
     {
         name: 'TechCrunch AI',
@@ -154,6 +167,11 @@ const RSS_FEEDS = [
         category: 'Technology'
     }
 ];
+
+const RSS_FEEDS = RAW_RSS_FEEDS.map((feed) => ({
+    ...feed,
+    category: ensureCategory(feed.category)
+}));
 
 const IMPORTANT_KEYWORDS = [
     // Major Companies
