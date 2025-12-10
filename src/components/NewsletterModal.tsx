@@ -23,7 +23,7 @@ const emailSchema = z.object({
 const buildNewsletterEndpoint = () => {
   const configuredUrl = import.meta.env.VITE_SERVER_URL?.trim();
   if (!configuredUrl) {
-    return "/api/newsletter/subscribe";
+    throw new Error("Missing VITE_SERVER_URL. Did you configure your .env file?");
   }
   const normalized = configuredUrl.endsWith("/") ? configuredUrl.slice(0, -1) : configuredUrl;
   return `${normalized}/api/newsletter/subscribe`;

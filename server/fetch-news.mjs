@@ -5,7 +5,20 @@ import Parser from 'rss-parser';
 import dotenv from 'dotenv';
 import he from 'he';
 import { load as loadHtml } from 'cheerio';
-import categoriesConfig from '../shared/article-categories.json' assert { type: 'json' };
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const readJsonRelative = (relativePath) => {
+    const filePath = path.resolve(__dirname, relativePath);
+    const fileContents = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(fileContents);
+};
+
+const categoriesConfig = readJsonRelative('../shared/article-categories.json');
 
 dotenv.config();
 

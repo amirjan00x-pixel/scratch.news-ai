@@ -117,6 +117,51 @@ Privileged functionality is guarded by rate-limited API-key authentication plus 
 
 Rotate `ADMIN_API_KEY` any time you suspect exposure, then redeploy both server and any long-lived admin clients (they will be forced to re-authenticate).
 
+## Local Development Mode (Vercel detached)
+
+The repository is currently configured to run entirely on your machine without any Vercel routing or env injection. Nothing was deleted—when you are ready to redeploy, just reconnect the repo to Vercel and reuse the same environment variables.
+
+### One-time setup
+
+1. Copy the env templates and fill in real values:
+   ```bash
+   cp .env.example .env
+   cp server/.env.example server/.env
+   ```
+2. Ensure the following variables exist:
+   - Frontend `.env`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SERVER_URL=http://localhost:3001`
+   - Backend `server/.env`: `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_API_KEY`, `API_ALLOWED_ORIGINS="http://localhost:5173,http://localhost:3000"`
+3. Install dependencies:
+   ```bash
+   npm install
+   npm --prefix server install
+   ```
+
+### Running locally
+
+Use two terminals so the frontend and backend stay in sync:
+
+```bash
+# Terminal 1 - backend (Express + Supabase integration)
+npm run server  # loads server/.env and listens on http://localhost:3001
+
+# Terminal 2 - frontend (Vite dev server on http://localhost:5173)
+npm run dev
+```
+
+### Verification checklist
+
+- Frontend loads on `http://localhost:5173` and points `VITE_SERVER_URL` to `http://localhost:3001`.
+- Backend responds at `http://localhost:3001/api/newsletter/subscribe` (try `curl -X POST` with a JSON body).
+- Supabase credentials allow both anon reads (frontend) and service-role inserts (backend).
+- Newsletter signup succeeds from the modal and returns 200, 400, or 409 as expected.
+- Admin endpoints (`/api/admin/authenticate`, `/api/admin/newsletter/stats`, `/api/fetch-news`) require the `x-api-key` header that matches `ADMIN_API_KEY`.
+- No runtime dependency on `.vercel` or Vercel APIs—the project runs with local `.env` files only.
+
+### Re-enabling Vercel later
+
+When you are ready to redeploy, simply re-link the repository/project inside Vercel, copy the same env variables into the Vercel dashboard, and trigger a new deployment. No additional code changes are required.
+
 ## Search & filtering
 
 - The header search opens a secure popover and dispatches a `search` custom event with `{ query: string }`. The homepage listens for that event and re-runs the Supabase query immediately.
