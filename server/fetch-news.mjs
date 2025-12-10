@@ -51,37 +51,67 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 5;
-const rateLimitBuckets = new Map();
-
-const rateLimit = (req, res, next) => {
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
-    const now = Date.now();
-    const bucket = rateLimitBuckets.get(ip) || { count: 0, start: now };
-
-    if (now - bucket.start >= RATE_LIMIT_WINDOW_MS) {
-        bucket.count = 0;
-        bucket.start = now;
+const resolveRequestIp = (req) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length) {
+        return forwarded.split(',')[0].trim();
     }
-
-    bucket.count += 1;
-    rateLimitBuckets.set(ip, bucket);
-
-    if (bucket.count > RATE_LIMIT_MAX_REQUESTS) {
-        return res.status(429).json({
-            success: false,
-            error: 'Rate limit exceeded. Try again later.'
-        });
+    if (Array.isArray(forwarded) && forwarded.length) {
+        return forwarded[0];
     }
-
-    return next();
+    return req.ip || req.connection?.remoteAddress || 'unknown';
 };
+
+const createIpRateLimiter = ({ windowMs, max, errorMessage }) => {
+    const buckets = new Map();
+    return (req, res, next) => {
+        const ip = resolveRequestIp(req);
+        const now = Date.now();
+        const bucket = buckets.get(ip) || { count: 0, start: now };
+
+        if (now - bucket.start >= windowMs) {
+            bucket.count = 0;
+            bucket.start = now;
+        }
+
+        bucket.count += 1;
+        buckets.set(ip, bucket);
+
+        if (bucket.count > max) {
+            return res.status(429).json({
+                success: false,
+                error: errorMessage || 'Rate limit exceeded. Try again later.'
+            });
+        }
+
+        return next();
+    };
+};
+
+const adminRateLimit = createIpRateLimiter({
+    windowMs: 60 * 1000,
+    max: 5,
+    errorMessage: 'Rate limit exceeded. Try again later.'
+});
+
+const newsletterRateLimit = createIpRateLimiter({
+    windowMs: 5 * 60 * 1000,
+    max: 3,
+    errorMessage: 'Please wait before trying again.'
+});
+
+const EMAIL_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+const sanitizeSourceTag = (value = '') =>
+    value
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/[<>"'`]/g, '')
+        .trim();
+const getErrorMessage = (err) => (err instanceof Error ? err.message : String(err ?? 'Unknown error'));
 
 const requireAdminApiKey = (req, res, next) => {
     const providedKey = req.get('x-api-key');
     if (!providedKey || providedKey !== ADMIN_API_KEY) {
-        console.warn(`Unauthorized access attempt blocked for route ${req.path} from IP ${req.ip}`);
+        console.warn(`Unauthorized access attempt blocked for route ${req.path} from IP ${resolveRequestIp(req)}`);
         return res.status(401).json({
             success: false,
             error: 'Unauthorized'
@@ -810,11 +840,98 @@ export async function fetchNews() {
     };
 }
 
-app.post('/api/admin/authenticate', rateLimit, requireAdminApiKey, (_req, res) => {
+app.post('/api/newsletter/subscribe', newsletterRateLimit, async (req, res) => {
+    const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+    if (!rawEmail) {
+        return res.status(400).json({
+            success: false,
+            error: 'Email is required.'
+        });
+    }
+
+    const email = rawEmail.toLowerCase();
+    if (email.length < 5 || email.length > 255 || !EMAIL_REGEX.test(email)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Please provide a valid email address.'
+        });
+    }
+
+    const rawSource = typeof req.body?.source === 'string' ? req.body.source.trim() : '';
+    const sanitizedSource = rawSource ? sanitizeSourceTag(rawSource).slice(0, 100) : '';
+    const source = sanitizedSource || null;
+
+    try {
+        const { data, error } = await supabase
+            .from('newsletter_subscribers')
+            .insert({
+                email,
+                source
+            })
+            .select('id, created_at')
+            .single();
+
+        if (error) {
+            const duplicate = error.code === '23505' || (error.message && error.message.toLowerCase().includes('duplicate key'));
+            if (duplicate) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'Looks like you are already subscribed.'
+                });
+            }
+
+            const dbErrorMessage = error?.message ?? 'Unknown database error';
+            console.error('Newsletter subscription insert failed:', dbErrorMessage);
+            throw error;
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                id: data.id,
+                created_at: data.created_at
+            },
+            message: 'Thanks for subscribing!'
+        });
+    } catch (err) {
+        console.error('Newsletter subscription error:', getErrorMessage(err));
+        return res.status(500).json({
+            success: false,
+            error: 'Unable to complete subscription right now. Please try again later.'
+        });
+    }
+});
+
+app.get('/api/admin/newsletter/stats', adminRateLimit, requireAdminApiKey, async (_req, res) => {
+    try {
+        const { count, error } = await supabase
+            .from('newsletter_subscribers')
+            .select('id', { count: 'exact', head: true });
+
+        if (error) {
+            throw error;
+        }
+
+        return res.json({
+            success: true,
+            data: {
+                subscriberCount: count ?? 0
+            }
+        });
+    } catch (error) {
+        console.error('Newsletter stats error:', getErrorMessage(error));
+        return res.status(500).json({
+            success: false,
+            error: 'Unable to fetch stats right now.'
+        });
+    }
+});
+
+app.post('/api/admin/authenticate', adminRateLimit, requireAdminApiKey, (_req, res) => {
     res.json({ success: true });
 });
 
-app.post('/api/fetch-news', rateLimit, requireAdminApiKey, async (_req, res) => {
+app.post('/api/fetch-news', adminRateLimit, requireAdminApiKey, async (_req, res) => {
     try {
         const result = await fetchNews();
         res.json(result);

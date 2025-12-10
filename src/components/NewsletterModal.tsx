@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,16 +20,46 @@ const emailSchema = z.object({
     .toLowerCase(),
 });
 
+const buildNewsletterEndpoint = () => {
+  const configuredUrl = import.meta.env.VITE_SERVER_URL?.trim();
+  if (!configuredUrl) {
+    return "/api/newsletter/subscribe";
+  }
+  const normalized = configuredUrl.endsWith("/") ? configuredUrl.slice(0, -1) : configuredUrl;
+  return `${normalized}/api/newsletter/subscribe`;
+};
+
+const NEWSLETTER_ENDPOINT = buildNewsletterEndpoint();
+
+type StatusMessage = {
+  type: "success" | "error";
+  text: string;
+};
+
 export const NewsletterModal = ({ open, onOpenChange }: NewsletterModalProps) => {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!open) {
+      setStatusMessage(null);
+      setEmail("");
+      setLoading(false);
+    }
+  }, [open]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
+    setStatusMessage(null);
     const validation = emailSchema.safeParse({ email });
     if (!validation.success) {
+      setStatusMessage({
+        type: "error",
+        text: validation.error.errors[0].message,
+      });
       toast({
         title: "Invalid Email",
         description: validation.error.errors[0].message,
@@ -40,17 +70,61 @@ export const NewsletterModal = ({ open, onOpenChange }: NewsletterModalProps) =>
 
     setLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const response = await fetch(NEWSLETTER_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: validation.data.email,
+          source: "newsletter-modal",
+        }),
+      });
+
+      let payload: { message?: string; error?: string } | null = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const responseMessage = payload?.error || "We couldn't save your email just yet. Please try again.";
+        const toastTitle = response.status === 409 ? "Already Subscribed" : "Subscription Failed";
+
+        setStatusMessage({
+          type: "error",
+          text: responseMessage,
+        });
+
+        toast({
+          title: toastTitle,
+          description: responseMessage,
+          variant: "destructive",
+        });
+        return;
+      }
+
       toast({
         title: "Successfully subscribed!",
         description: "You'll receive the latest AI news in your inbox weekly",
       });
+
+      setStatusMessage({
+        type: "success",
+        text: payload?.message ?? "You're on the list! Welcome aboard.",
+      });
       setEmail("");
       onOpenChange(false);
     } catch {
+      const fallbackMessage = "Failed to subscribe. Please check your connection and try again.";
+      setStatusMessage({
+        type: "error",
+        text: fallbackMessage,
+      });
       toast({
         title: "Error",
-        description: "Failed to subscribe. Please try again.",
+        description: fallbackMessage,
         variant: "destructive",
       });
     } finally {
@@ -92,7 +166,18 @@ export const NewsletterModal = ({ open, onOpenChange }: NewsletterModalProps) =>
               required
               maxLength={255}
               className="h-12 rounded-md border-2 border-muted text-base focus-visible:ring-primary"
+              aria-invalid={statusMessage?.type === "error"}
+              aria-describedby={statusMessage ? "newsletter-status-message" : undefined}
             />
+            {statusMessage && (
+              <p
+                id="newsletter-status-message"
+                role="status"
+                className={`text-sm ${statusMessage.type === "error" ? "text-red-600" : "text-green-600"}`}
+              >
+                {statusMessage.text}
+              </p>
+            )}
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <button

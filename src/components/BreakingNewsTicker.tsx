@@ -19,6 +19,8 @@ export const BreakingNewsTicker = () => {
 
   if (!breakingNews || breakingNews.length === 0) return null;
 
+  const tickerItems = [...breakingNews, ...breakingNews];
+
   return (
     <div className="bg-primary text-primary-foreground overflow-hidden">
       <div className="container mx-auto px-4 py-2 flex items-center gap-4">
@@ -27,17 +29,17 @@ export const BreakingNewsTicker = () => {
           BREAKING
         </div>
         <div className="flex-1 overflow-hidden">
-          <div className="animate-scroll flex gap-8">
-            {breakingNews.map((news) => (
-              <span key={news.id} className="text-sm whitespace-nowrap">
-                {news.title}
-              </span>
-            ))}
-            {breakingNews.map((news) => (
-              <span key={`${news.id}-duplicate`} className="text-sm whitespace-nowrap">
-                {news.title}
-              </span>
-            ))}
+          <div className="relative flex-nowrap">
+            <div className="ticker-track flex gap-8 animate-ticker-scroll motion-reduce:animate-none hover:[animation-play-state:paused]">
+              {tickerItems.map((news, index) => (
+                <span
+                  key={`${news.id}-${index}`}
+                  className="text-sm whitespace-nowrap"
+                >
+                  {news.title}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
