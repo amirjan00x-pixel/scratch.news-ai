@@ -90,7 +90,12 @@ This project relies on environment variables for every third-party credential. F
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `ADMIN_API_KEY`
    - `API_ALLOWED_ORIGINS`
+   - `UNSPLASH_ACCESS_KEY` (required for real-photo enrichment)
+   - `PIXABAY_API_KEY` (optional fallback photo source when Unsplash has no relevant matches or hits rate limits)
    - Optional Hugging Face tuning knobs: `HF_API_TOKEN`, `HF_IMAGE_MODEL`, `HF_IMAGE_ENDPOINT`, `HF_IMAGE_SIZE`, `HF_IMAGE_GUIDANCE`, `HF_IMAGE_NEGATIVE_PROMPT`
+   - Optional batch tuning for Unsplash backfills: `IMAGE_BACKFILL_BATCH_SIZE` (defaults to 15 rows/run)
+   - Optional ingestion throttling: `MAX_SOURCES_PER_RUN` (defaults to 30)
+   - Optional scheduler: `AUTO_FETCH_NEWS_MINUTES` (set to e.g. 30 to auto-fetch)
 
 `.gitignore` protects every `.env` file so real keys are never committed again. If you previously exposed a key, rotate it in Supabase/Hugging Face immediately before redeploying.
 
@@ -157,6 +162,31 @@ npm run dev
 - Newsletter signup succeeds from the modal and returns 200, 400, or 409 as expected.
 - Admin endpoints (`/api/admin/authenticate`, `/api/admin/newsletter/stats`, `/api/fetch-news`) require the `x-api-key` header that matches `ADMIN_API_KEY`.
 - No runtime dependency on `.vercel` or Vercel APIs—the project runs with local `.env` files only.
+
+## Unsplash-backed image enrichment
+
+Articles sometimes land without trustworthy art (either `image_url` stays null or falls back to the generic featured Unsplash feed). Run the dedicated enrichment script to patch those rows with real, editorial photos tied to each headline:
+
+1. Set `UNSPLASH_ACCESS_KEY` inside `server/.env`. The script refuses to run without it. (Optional but recommended) Set `PIXABAY_API_KEY` so the script can fall back to Pixabay when Unsplash rate-limits or cannot find a relevant match.
+2. (Optional) Tune `IMAGE_BACKFILL_BATCH_SIZE` if you want to process more or fewer articles per pass (default is 15 to stay well under Unsplash rate limits).
+3. Execute the backfill:
+   ```bash
+   npm run images:backfill
+   ```
+   The command calls `server/backfill-article-images.mjs`, which:
+   - Queries Supabase for articles whose `image_url` is `NULL`, empty, a data URI, or a random featured Unsplash fallback.
+   - Extracts high-signal keywords from each article’s title, summary, category, and source to build progressively broader queries (title + keywords, category + keywords, etc.).
+   - Searches Unsplash (editorial focus only), scores every result for topical relevance (Alt/description/tags/topic submissions must reference at least two keywords, penalizing “copy space”/generic backgrounds).
+   - If the first query’s best photo fails the relevance threshold, it automatically retries with the next query. When `PIXABAY_API_KEY` is provided, every failed Unsplash query is followed by a Pixabay request so the script has a second editorial-quality source before giving up.
+   - Writes the chosen `urls.regular` value back to `news_articles.image_url` via the Supabase service role key.
+
+The script prints every decision (query tried, skips, final score) so you can audit the selections. Re-run it any time new empty images show up; already-updated rows are ignored because their URLs are no longer null or generic.
+
+## AI source registry (150 sources)
+
+The full AI-only source list is stored in `shared/ai-sources.tsv`. The backend reads it on startup and automatically classifies each entry (RSS/newsletter/podcast/YouTube/research/community) from its URL patterns, then pulls from up to `MAX_SOURCES_PER_RUN` sources per run.
+
+To auto-fetch on a schedule, set `AUTO_FETCH_NEWS_MINUTES` in `server/.env` (for example `30`) and run `npm run server`.
 
 ### Re-enabling Vercel later
 

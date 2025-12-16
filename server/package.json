@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "fetch": "node fetch-news.mjs --run-now",
-    "start": "node fetch-news.mjs"
+    "start": "node fetch-news.mjs",
+    "backfill-images": "node backfill-article-images.mjs",
+    "diagnose-images": "node diagnose-images.mjs",
+    "list-sources": "node list-sources.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.6",

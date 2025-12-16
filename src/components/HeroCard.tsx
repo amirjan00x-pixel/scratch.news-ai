@@ -1,6 +1,7 @@
 import { Clock, Bookmark, Share2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NewsImage } from "./NewsImage";
 
 interface HeroCardProps {
   title: string;
@@ -22,10 +23,10 @@ export const HeroCard = ({
   return (
     <div className="relative overflow-hidden rounded-lg bg-card border border-border shadow-glass-lg group cursor-pointer">
       <div className="aspect-[16/9] md:aspect-[21/9] relative overflow-hidden">
-        <img 
-          src={image} 
+        <NewsImage
+          src={image}
           alt={title}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="w-full h-full"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
         

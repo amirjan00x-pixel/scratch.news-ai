@@ -8,6 +8,7 @@ import { load as loadHtml } from 'cheerio';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { generateWithOpenRouter } from './lib/openrouter.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +20,7 @@ const readJsonRelative = (relativePath) => {
 };
 
 const categoriesConfig = readJsonRelative('../shared/article-categories.json');
+const sourcesTsvPath = path.resolve(__dirname, '../shared/ai-sources.tsv');
 
 dotenv.config();
 
@@ -49,7 +51,11 @@ const ensureCategory = (category) => {
 };
 
 const app = express();
-const parser = new Parser();
+const parser = new Parser({
+    customFields: {
+        item: ['media:thumbnail', 'media:group', 'itunes:image']
+    }
+});
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
 const allowedOrigins = process.env.API_ALLOWED_ORIGINS.split(',')
     .map((origin) => origin.trim())
@@ -63,6 +69,170 @@ const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+const SOURCE_CATEGORY = 'AI';
+
+function parseTsvRow(line) {
+    // Supports tabs, but tolerates multiple spaces too.
+    const parts = line.split('\t');
+    if (parts.length >= 3) {
+        return {
+            name: (parts[0] || '').trim(),
+            main_url: (parts[1] || '').trim(),
+            rss_url: (parts[2] || '').trim()
+        };
+    }
+
+    // Fallback: split on 2+ spaces.
+    const alt = line.split(/\s{2,}/).map((p) => p.trim());
+    return {
+        name: (alt[0] || '').trim(),
+        main_url: (alt[1] || '').trim(),
+        rss_url: (alt[2] || '').trim()
+    };
+}
+
+function loadAiSources() {
+    const tsv = fs.readFileSync(sourcesTsvPath, 'utf-8');
+    const lines = tsv
+        .split(/\r?\n/)
+        .map((l) => l.trimEnd())
+        .filter(Boolean);
+
+    const [header, ...rows] = lines;
+    if (!header || !header.toLowerCase().includes('name')) {
+        throw new Error(`Invalid TSV header in ${sourcesTsvPath}`);
+    }
+
+    const sources = rows
+        .map(parseTsvRow)
+        .filter((row) => row.name && row.main_url);
+
+    const byName = new Map();
+    for (const source of sources) {
+        if (byName.has(source.name)) {
+            console.warn(`Duplicate source name in TSV ignored: ${source.name}`);
+            continue;
+        }
+        byName.set(source.name, source);
+    }
+
+    return [...byName.values()];
+}
+
+function classifySourceType(source) {
+    const main = (source.main_url || '').toLowerCase();
+    const rss = (source.rss_url || '').toLowerCase();
+
+    if (main.includes('youtube.com')) {
+        if (main.includes('playlist?list=')) return 'youtube_playlist';
+        return 'youtube_channel';
+    }
+    if (main.includes('reddit.com')) return 'community_reddit';
+    if (main.includes('huggingface.co/models')) return 'research_platform_api';
+    if (main.includes('arxiv.org') || main.includes('paperswithcode.com') || main.includes('jmlr.org') || main.includes('mlr.press') || main.includes('distill.pub')) {
+        return 'research_platform';
+    }
+    if (main.includes('substack.com') || rss.includes('beehiiv.com') || main.includes('beehiiv.com')) return 'newsletter';
+    if (rss.includes('/podcast') || main.includes('/podcast') || main.includes('ai-podcast') || rss.includes('feeds.blubrry.com') || rss.includes('changelog.com')) return 'podcast';
+    if (main.includes('openai.com') || main.includes('deepmind.com') || main.includes('ai.meta.com') || main.includes('huggingface.co/blog') || main.includes('blogs.microsoft.com') || main.includes('aws.amazon.com/blogs') || main.includes('developer.nvidia.com') || main.includes('research.ibm.com')) {
+        return 'company_blog';
+    }
+    return 'rss_website';
+}
+
+function inferArticleCategory(sourceType, source) {
+    const name = (source.name || '').toLowerCase();
+    const main = (source.main_url || '').toLowerCase();
+
+    if (sourceType === 'research_platform' || sourceType === 'research_platform_api') return 'Research';
+    if (sourceType === 'community_reddit') {
+        if (name.includes('datascience')) return 'Business';
+        return 'Research';
+    }
+    if (sourceType === 'podcast') {
+        if (name.includes('business') || main.includes('emerj.com')) return 'Business';
+        return 'Technology';
+    }
+    if (name.includes('business') || name.includes('trends') || name.includes('analytics') || main.includes('forrester.com') || main.includes('marketingaiinstitute.com') || main.includes('oecd.ai') || main.includes('partnershiponai.org')) {
+        return 'Business';
+    }
+    if (name.includes('stanford') || name.includes('bair') || name.includes('mila') || name.includes('ieee') || name.includes('mit') || name.includes('distill') || name.includes('jmlr') || name.includes('pmlr')) {
+        return 'Research';
+    }
+    return 'Technology';
+}
+
+function isResearchSource(sourceType, category) {
+    return sourceType === 'research_platform' || sourceType === 'research_platform_api' || category === 'Research';
+}
+
+function safeIdFromName(name) {
+    return String(name || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '')
+        .slice(0, 80);
+}
+
+const YOUTUBE_CACHE_PATH = path.resolve(__dirname, '.cache', 'youtube-feeds.json');
+
+function loadYoutubeCache() {
+    try {
+        const raw = fs.readFileSync(YOUTUBE_CACHE_PATH, 'utf-8');
+        return JSON.parse(raw);
+    } catch {
+        return {};
+    }
+}
+
+function saveYoutubeCache(cache) {
+    const dir = path.dirname(YOUTUBE_CACHE_PATH);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(YOUTUBE_CACHE_PATH, JSON.stringify(cache, null, 2));
+}
+
+function youtubeRssFromChannelId(channelId) {
+    return `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+}
+
+function youtubeRssFromPlaylistId(playlistId) {
+    return `https://www.youtube.com/feeds/videos.xml?playlist_id=${playlistId}`;
+}
+
+async function resolveYoutubeRssUrl(mainUrl) {
+    const url = String(mainUrl || '');
+    if (!url) return null;
+
+    const playlistMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+    if (playlistMatch) {
+        return youtubeRssFromPlaylistId(playlistMatch[1]);
+    }
+
+    const channelMatch = url.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
+    if (channelMatch) {
+        return youtubeRssFromChannelId(channelMatch[1]);
+    }
+
+    // Fetch HTML and extract channelId.
+    try {
+        const res = await fetch(url, {
+            headers: {
+                'User-Agent':
+                    'Mozilla/5.0 (compatible; NewsFetcher/1.0; +https://example.com)'
+            }
+        });
+        const html = await res.text();
+        const metaMatch = html.match(/itemprop=\"channelId\" content=\"(UC[a-zA-Z0-9_-]+)\"/);
+        if (metaMatch) return youtubeRssFromChannelId(metaMatch[1]);
+        const jsonMatch = html.match(/\"channelId\"\s*:\s*\"(UC[a-zA-Z0-9_-]+)\"/);
+        if (jsonMatch) return youtubeRssFromChannelId(jsonMatch[1]);
+    } catch (err) {
+        console.warn(`YouTube resolve failed for ${url}: ${getErrorMessage(err)}`);
+    }
+
+    return null;
+}
 
 const resolveRequestIp = (req) => {
     const forwarded = req.headers['x-forwarded-for'];
@@ -146,75 +316,58 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-const RAW_RSS_FEEDS = [
-    // Major Tech News
-    {
-        name: 'TechCrunch AI',
-        url: 'https://techcrunch.com/tag/artificial-intelligence/feed/',
-        category: 'Technology'
-    },
-    {
-        name: 'VentureBeat AI',
-        url: 'https://venturebeat.com/category/ai/feed/',
-        category: 'Technology'
-    },
-    {
-        name: 'The Verge AI',
-        url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml',
-        category: 'Technology'
-    },
-    {
-        name: 'Ars Technica AI',
-        url: 'https://arstechnica.com/tag/artificial-intelligence/feed/',
-        category: 'Technology'
-    },
-    {
-        name: 'Wired AI',
-        url: 'https://www.wired.com/feed/tag/ai/latest/rss',
-        category: 'Technology'
-    },
+const AI_SOURCES = loadAiSources();
 
-    // Research & Academic
-    {
-        name: 'MIT Technology Review',
-        url: 'https://www.technologyreview.com/topic/artificial-intelligence/feed',
-        category: 'Research'
-    },
-    {
-        name: 'AI News',
-        url: 'https://www.artificialintelligence-news.com/feed/',
-        category: 'Research'
-    },
+const MAX_SOURCES_PER_RUN = Number.parseInt(
+    process.env.MAX_SOURCES_PER_RUN || '30',
+    10
+);
 
-    // Industry Specific
-    {
-        name: 'AI Business',
-        url: 'https://aibusiness.com/rss.xml',
-        category: 'Business'
-    },
-    {
-        name: 'Machine Learning Mastery',
-        url: 'https://machinelearningmastery.com/feed/',
-        category: 'Research'
-    },
+async function buildFeedList() {
+    const youtubeCache = loadYoutubeCache();
+    let cacheDirty = false;
 
-    // General Tech (with AI coverage)
-    {
-        name: 'Reuters Technology',
-        url: 'https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best',
-        category: 'Technology'
-    },
-    {
-        name: 'ZDNet AI',
-        url: 'https://www.zdnet.com/topic/artificial-intelligence/rss.xml',
-        category: 'Technology'
+    const feeds = [];
+
+    for (const source of AI_SOURCES) {
+        const type = classifySourceType(source);
+        const articleCategory = ensureCategory(inferArticleCategory(type, source));
+        const isResearch = isResearchSource(type, articleCategory);
+        const id = safeIdFromName(source.name);
+
+        let feedUrl = source.rss_url || null;
+        if ((type === 'youtube_channel' || type === 'youtube_playlist') && !feedUrl) {
+            const cached = youtubeCache[source.main_url];
+            if (typeof cached === 'string' && cached.startsWith('http')) {
+                feedUrl = cached;
+            } else {
+                const resolved = await resolveYoutubeRssUrl(source.main_url);
+                if (resolved) {
+                    feedUrl = resolved;
+                    youtubeCache[source.main_url] = resolved;
+                    cacheDirty = true;
+                } else {
+                    console.warn(`Unable to resolve YouTube RSS for ${source.name} (${source.main_url})`);
+                }
+            }
+        }
+
+        feeds.push({
+            id,
+            name: source.name,
+            type,
+            main_url: source.main_url,
+            url: feedUrl,
+            category: articleCategory,
+            source_category: SOURCE_CATEGORY,
+            is_research: isResearch
+        });
     }
-];
 
-const RSS_FEEDS = RAW_RSS_FEEDS.map((feed) => ({
-    ...feed,
-    category: ensureCategory(feed.category)
-}));
+    if (cacheDirty) saveYoutubeCache(youtubeCache);
+
+    return feeds;
+}
 
 const IMPORTANT_KEYWORDS = [
     // Major Companies
@@ -301,30 +454,25 @@ const STOPWORDS = new Set([
 
 const CONTENT_FILTER_RULES = {
     minWordCount: 40,
-    requiredKeywords: [
+    requiredAiSignals: [
         'ai',
         'artificial intelligence',
         'machine learning',
-        'ml',
+        'deep learning',
         'neural',
-        'automation',
-        'robotics',
-        'data',
-        'model'
+        'llm',
+        'large language model',
+        'generative',
+        'transformer',
+        'computer vision',
+        'reinforcement learning',
+        'diffusion',
+        'robotics'
     ],
-    bannedPatterns: [/sponsored/i, /newsletter/i, /giveaway/i, /subscribe/i],
+    bannedPatterns: [/sponsored/i, /giveaway/i, /advertorial/i],
     bannedTopics: [
-        'politics',
-        'election',
-        'president',
-        'parliament',
-        'senate',
-        'campaign',
-        'government',
-        'policy debate',
-        'geopolitics',
         'war',
-        'conflict',
+        'armed conflict',
         'gaza',
         'israel',
         'palestine',
@@ -332,8 +480,9 @@ const CONTENT_FILTER_RULES = {
         'russia',
         'iran',
         'north korea',
-        'trump',
-        'biden'
+        'terror',
+        'weapon',
+        'missile'
     ]
 };
 
@@ -373,6 +522,7 @@ const HF_IMAGE_NEGATIVE_PROMPT =
     process.env.HF_IMAGE_NEGATIVE_PROMPT ||
     'text, watermark, logo, politics, war, violence, weapons, gore';
 let hasLoggedMissingHfToken = false;
+let hfAuthFailed = false;
 const [HF_IMAGE_WIDTH, HF_IMAGE_HEIGHT] = (() => {
     const parts = HF_IMAGE_SIZE.toLowerCase().split('x');
     const width = parseInt(parts[0], 10);
@@ -446,32 +596,60 @@ function extractHtmlImages(html, base) {
         .filter((u) => typeof u === "string" && u.startsWith("http"));
 }
 
+function extractMediaThumbnails(item) {
+    const candidates = [];
+    const group = item?.['media:group'];
+    if (group) {
+        const thumb = group['media:thumbnail'] || group.thumbnail;
+        if (Array.isArray(thumb)) {
+            for (const t of thumb) {
+                if (t?.$?.url) candidates.push(t.$.url);
+                if (t?.url) candidates.push(t.url);
+            }
+        } else if (thumb?.$?.url) {
+            candidates.push(thumb.$.url);
+        } else if (thumb?.url) {
+            candidates.push(thumb.url);
+        }
+    }
+    return candidates.filter(Boolean);
+}
+
 export function extractImageUrl(item = {}) {
     const base = item.link || "";
 
     const candidates = [];
 
     // enclosure tags
-    if (item.enclosure?.url) candidates.push(item.enclosure.url);
+    if (item.enclosure?.url) candidates.push(absoluteUrl(item.enclosure.url, base));
 
     // media:content
-    if (item["media:content"]?.url) candidates.push(item["media:content"].url);
+    if (item["media:content"]?.url)
+        candidates.push(absoluteUrl(item["media:content"].url, base));
+
+    // media:thumbnail
+    if (item["media:thumbnail"]?.url)
+        candidates.push(absoluteUrl(item["media:thumbnail"].url, base));
+    candidates.push(...extractMediaThumbnails(item).map((u) => absoluteUrl(u, base)));
 
     // HTML fields
     candidates.push(...extractHtmlImages(item.content, base));
     candidates.push(...extractHtmlImages(item.description, base));
     candidates.push(...extractHtmlImages(item.summary, base));
 
-    const unique = [...new Set(candidates)];
-
-    const valid = unique.filter((url) =>
-        /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(url)
+    const unique = [...new Set(candidates)].filter(
+        (u) => typeof u === "string" && u.startsWith("http")
     );
+
+    const valid = unique.filter((url) => {
+        if (/\.(png|jpe?g|gif|webp|svg|avif)$/i.test(url)) return true;
+        // Some CDNs (including Unsplash) omit extensions but include format hints.
+        return /[?&](fm|format)=(jpg|jpeg|png|webp|avif)\b/i.test(url);
+    });
 
     if (valid.length > 0) return valid[0];
 
-    // FIX: ensure no fake or irrelevant images
-    return selectFallbackImage(item.title || '', base);
+    return null;
 }
 
 function buildImagePrompt({ title, summary, category, source }) {
@@ -504,6 +682,7 @@ async function requestHuggingFaceImage(prompt) {
     }
 
     try {
+        if (hfAuthFailed) return null;
         const response = await fetch(HF_IMAGE_ENDPOINT, {
             method: 'POST',
             headers: {
@@ -524,6 +703,13 @@ async function requestHuggingFaceImage(prompt) {
 
         if (!response.ok) {
             const errorText = await response.text();
+            if (response.status === 401 || response.status === 403) {
+                hfAuthFailed = true;
+                console.warn(
+                    `Hugging Face token rejected (${response.status}); disabling HF image generation for this run.`
+                );
+                return null;
+            }
             console.warn(
                 `Hugging Face image request failed (${response.status}): ${errorText}`
             );
@@ -555,9 +741,7 @@ async function requestHuggingFaceImage(prompt) {
 
 async function resolveArticleImage({ item, title, summary, category, source }) {
     const existing = extractImageUrl(item);
-    if (existing && !isGeneratedFallback(existing)) {
-        return existing;
-    }
+    if (existing) return existing;
 
     const prompt = buildImagePrompt({ title, summary, category, source });
     const generated = await requestHuggingFaceImage(prompt);
@@ -565,7 +749,10 @@ async function resolveArticleImage({ item, title, summary, category, source }) {
         return generated;
     }
 
-    return existing || selectFallbackImage(title || '', item.link || '');
+    console.log(
+        `No usable image found in RSS item for "${title}" (${source}).`
+    );
+    return null;
 }
 
 function tokenize(text) {
@@ -696,32 +883,51 @@ function createEditorialPackage({ title, snippet, body, source }) {
     };
 }
 
-function applyContentFilters({ title, summary, body, source }) {
+function applyContentFilters({ title, summary, body, source, minWordCount }) {
     const combined = [title, summary, body].filter(Boolean).join(' ').toLowerCase();
     const wordCount = combined.split(/\s+/).filter(Boolean).length;
 
-    if (wordCount < CONTENT_FILTER_RULES.minWordCount) {
+    const effectiveMinWordCount =
+        Number.isFinite(minWordCount) && minWordCount > 0
+            ? minWordCount
+            : CONTENT_FILTER_RULES.minWordCount;
+
+    if (wordCount < effectiveMinWordCount) {
         return { allowed: false, reason: 'insufficient word count' };
     }
 
     if (
-        !CONTENT_FILTER_RULES.requiredKeywords.some((keyword) =>
-            combined.includes(keyword)
-        )
+        !CONTENT_FILTER_RULES.requiredAiSignals.some((keyword) => combined.includes(keyword))
     ) {
-        return { allowed: false, reason: 'missing AI keyword' };
+        return { allowed: false, reason: 'missing AI keyword (no AI signal terms found)' };
     }
 
-    if (CONTENT_FILTER_RULES.bannedPatterns.some((pattern) => pattern.test(combined))) {
-        return { allowed: false, reason: 'banned content pattern' };
+    const matchedPattern = CONTENT_FILTER_RULES.bannedPatterns.find((pattern) =>
+        pattern.test(combined)
+    );
+    if (matchedPattern) {
+        return { allowed: false, reason: `banned content pattern (${matchedPattern})` };
     }
 
-    if (
-        CONTENT_FILTER_RULES.bannedTopics.some((topic) =>
-            combined.includes(topic.toLowerCase())
-        )
-    ) {
-        return { allowed: false, reason: 'banned topic (political/geo conflict)' };
+    const escapeRegExp = (value) =>
+        value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const matchesTopic = (text, topic) => {
+        const normalized = String(topic || '').trim().toLowerCase();
+        if (!normalized) return false;
+        // Avoid substring false-positives (e.g. "war" inside "forward").
+        const pattern = normalized
+            .split(/\s+/)
+            .map((part) => escapeRegExp(part))
+            .join('\\s+');
+        const re = new RegExp(`(?:^|\\W)${pattern}(?:\\W|$)`, 'i');
+        return re.test(text);
+    };
+
+    const matchedTopic = CONTENT_FILTER_RULES.bannedTopics.find((topic) =>
+        matchesTopic(combined, topic)
+    );
+    if (matchedTopic) {
+        return { allowed: false, reason: `banned topic (${matchedTopic})` };
     }
 
     return { allowed: true };
@@ -735,6 +941,13 @@ function toIsoDate(item) {
 
 async function buildArticleRecord(item, feed) {
     const title = sanitizeText(item.title) || 'No title';
+    const sourceUrl = item.link || item.guid || null;
+    if (!sourceUrl || sourceUrl === '#') {
+        console.log(
+            `Skipped item from ${feed.name} (${feed.type}): missing source URL for "${title}".`
+        );
+        return null;
+    }
     const summarySource =
         item.contentSnippet || item.summary || item.content || '';
     const cleanSnippet = sanitizeText(summarySource) || 'No summary available';
@@ -746,16 +959,18 @@ async function buildArticleRecord(item, feed) {
             ''
     );
 
+    const minWordCount = feed.type === 'podcast' || feed.type.startsWith('youtube') ? 10 : CONTENT_FILTER_RULES.minWordCount;
     const { allowed, reason } = applyContentFilters({
         title,
         summary: cleanSnippet,
         body: articleBody,
-        source: feed.name
+        source: feed.name,
+        minWordCount
     });
 
     if (!allowed) {
         console.log(
-            `Filtered article from ${feed.name}: "${title}" skipped (${reason})`
+            `Filtered item from ${feed.name} (${feed.type}): "${title}" skipped (${reason})`
         );
         return null;
     }
@@ -770,7 +985,8 @@ async function buildArticleRecord(item, feed) {
     const summary = editorialPackage.formattedSummary || cleanSnippet;
     const importanceScore = calculateImportanceScore(title, summary, feed.name);
 
-    if (importanceScore < 6) {
+    const minImportance = feed.is_research ? 5 : 6;
+    if (importanceScore < minImportance) {
         return null;
     }
 
@@ -787,7 +1003,7 @@ async function buildArticleRecord(item, feed) {
         summary,
         category: feed.category,
         source: feed.name,
-        source_url: item.link || '#',
+        source_url: sourceUrl,
         image_url: imageUrl,
         importance_score: importanceScore,
         is_featured: importanceScore >= 9,
@@ -797,11 +1013,91 @@ async function buildArticleRecord(item, feed) {
 
 export async function fetchNews() {
     const allArticles = [];
+    const feeds = await buildFeedList();
+    const rssFeeds = feeds.filter(
+        (feed) => typeof feed.url === 'string' && feed.url.startsWith('http')
+    );
+    const apiFeeds = feeds.filter((feed) => feed.type === 'research_platform_api');
 
-    for (const feed of RSS_FEEDS) {
+    const selectedFeeds = [...rssFeeds, ...apiFeeds].slice(0, MAX_SOURCES_PER_RUN);
+
+    async function fetchHuggingFaceModels(feed) {
+        // Public API: returns recently modified models.
+        const endpoint =
+            'https://huggingface.co/api/models?sort=lastModified&direction=-1&limit=20';
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+            const body = await response.text();
+            throw new Error(
+                `Hugging Face models API failed (${response.status}): ${body}`
+            );
+        }
+        const models = (await response.json()) || [];
+        const now = new Date().toISOString();
+
+        return models
+            .filter((m) => m?.id)
+            .slice(0, 15)
+            .map((m) => ({
+                title: `Model update: ${m.id}`,
+                link: `https://huggingface.co/${m.id}`,
+                isoDate: m.lastModified || now,
+                contentSnippet: `Pipeline: ${m.pipeline_tag || 'unknown'}. Tags: ${(m.tags || [])
+                    .slice(0, 6)
+                    .join(', ')}.`
+            }))
+            .map((item) => buildArticleRecord(item, feed));
+    }
+
+    for (const feed of selectedFeeds) {
         try {
+            if (feed.type === 'research_platform_api') {
+                console.log(`Fetching from ${feed.name} (API)...`);
+                const candidates = await Promise.all(
+                    await fetchHuggingFaceModels(feed)
+                );
+                const filteredArticles = candidates.filter(
+                    (article) => article !== null
+                );
+                allArticles.push(...filteredArticles);
+                console.log(
+                    `Found ${filteredArticles.length} important items from ${feed.name}`
+                );
+                continue;
+            }
+
             console.log(`Fetching from ${feed.name}...`);
-            const feedData = await parser.parseURL(feed.url);
+            const res = await fetch(feed.url, {
+                headers: {
+                    'User-Agent':
+                        'Mozilla/5.0 (compatible; NewsFetcher/1.0; +https://example.com)',
+                    Accept:
+                        'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, text/html;q=0.8'
+                }
+            });
+            if (!res.ok) {
+                const body = await res.text();
+                throw new Error(
+                    `HTTP ${res.status} fetching feed: ${body.slice(0, 180)}`
+                );
+            }
+            const contentType = res.headers.get('content-type') || '';
+            const raw = await res.text();
+            // Strip BOM and any leading non-XML noise (some providers prepend text).
+            const bomStripped = raw.replace(/^\uFEFF/, '');
+            const firstTag = bomStripped.indexOf('<');
+            const xml = firstTag > 0 ? bomStripped.slice(firstTag) : bomStripped;
+            const trimmed = xml.trimStart();
+            if (!trimmed.startsWith('<')) {
+                throw new Error(
+                    `Non-XML feed response (content-type: ${contentType || 'unknown'}): ${trimmed.slice(
+                        0,
+                        120
+                    )}`
+                );
+            }
+
+            const feedData = await parser.parseString(xml);
             const items = feedData.items ?? [];
             const candidateArticles = await Promise.all(
                 items
@@ -829,9 +1125,66 @@ export async function fetchNews() {
 
     console.log(`Upserting ${allArticles.length} articles into database...`);
 
+    const incomingUrls = [...new Set(allArticles.map((a) => a.source_url).filter(Boolean))];
+    const existingImageMap = new Map();
+    if (incomingUrls.length) {
+        const { data: existingRows, error: existingError } = await supabase
+            .from('news_articles')
+            .select('source_url, image_url')
+            .in('source_url', incomingUrls);
+
+        if (existingError) {
+            console.warn(
+                `Unable to prefetch existing images for merge protection: ${existingError.message}`
+            );
+        } else {
+            for (const row of existingRows || []) {
+                if (row?.source_url) {
+                    existingImageMap.set(row.source_url, row.image_url);
+                }
+            }
+        }
+    }
+
+    const isRenderableImageUrl = (value) => {
+        if (value == null) return false;
+        const url = String(value).trim();
+        if (!url || url === 'null' || url === 'undefined') return false;
+        if (url.startsWith('data:image/')) return true;
+        return url.startsWith('https://') || url.startsWith('http://');
+    };
+
+    const isGenericFallbackUrl = (value) => {
+        if (!value) return false;
+        const url = String(value).trim();
+        return (
+            url.startsWith('https://source.unsplash.com/featured/') ||
+            url.startsWith('http://source.unsplash.com/featured/')
+        );
+    };
+
+    const mergedArticles = allArticles.map((article) => {
+        const existingImage = existingImageMap.get(article.source_url);
+        const incomingImage = article.image_url;
+
+        // Protect enriched/known-good images from being overwritten with null/invalid/fallback.
+        if (
+            isRenderableImageUrl(existingImage) &&
+            !isGenericFallbackUrl(existingImage) &&
+            (!isRenderableImageUrl(incomingImage) || isGenericFallbackUrl(incomingImage))
+        ) {
+            return {
+                ...article,
+                image_url: existingImage
+            };
+        }
+
+        return article;
+    });
+
     const { data, error } = await supabase
         .from('news_articles')
-        .upsert(allArticles, {
+        .upsert(mergedArticles, {
             onConflict: 'source_url',
             ignoreDuplicates: false
         })
@@ -973,6 +1326,23 @@ app.use((err, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 3001;
+const AUTO_FETCH_NEWS_MINUTES = Number.parseInt(
+    process.env.AUTO_FETCH_NEWS_MINUTES || '0',
+    10
+);
+let autoFetchInProgress = false;
+
+async function runAutoFetch() {
+    if (autoFetchInProgress) return;
+    autoFetchInProgress = true;
+    try {
+        await fetchNews();
+    } catch (err) {
+        console.error('Auto fetch failed:', getErrorMessage(err));
+    } finally {
+        autoFetchInProgress = false;
+    }
+}
 
 if (process.argv.includes('--run-now')) {
     fetchNews()
@@ -985,5 +1355,16 @@ if (process.argv.includes('--run-now')) {
 } else {
     app.listen(PORT, () => {
         console.log(`News fetcher server running on http://localhost:${PORT}`);
+
+        if (AUTO_FETCH_NEWS_MINUTES > 0) {
+            console.log(
+                `Auto-fetch enabled: running every ${AUTO_FETCH_NEWS_MINUTES} minute(s).`
+            );
+            runAutoFetch();
+            setInterval(
+                runAutoFetch,
+                AUTO_FETCH_NEWS_MINUTES * 60 * 1000
+            );
+        }
     });
 }

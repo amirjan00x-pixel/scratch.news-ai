@@ -1,5 +1,6 @@
 import { Clock } from "lucide-react";
 import { ShareButtons } from "./ShareButtons";
+import { NewsImage } from "./NewsImage";
 
 interface CompactNewsCardProps {
   title: string;
@@ -24,10 +25,10 @@ export const CompactNewsCard = ({
       className="group cursor-pointer block"
     >
       <div className="rounded overflow-hidden mb-2">
-        <img 
-          src={image} 
+        <NewsImage
+          src={image}
           alt={title}
-          className="w-full h-24 object-cover transition-transform duration-300 group-hover:scale-110"
+          className="w-full h-24"
         />
       </div>
       

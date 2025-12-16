@@ -160,86 +160,96 @@ serve(async (req) => {
     }
 
     // Process each article with AI for summarization and importance evaluation
+    const OPENROUTER_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
+    const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
+    const SITE_URL = Deno.env.get("OPENROUTER_SITE_URL") ?? "https://github.com/new20/scratch.news-ai";
+    const APP_NAME = Deno.env.get("OPENROUTER_APP_NAME") ?? "scratch.news-ai";
+
+    const callOpenRouter = async (messages: { role: string; content: string }[]) => {
+      if (!OPENROUTER_API_KEY) {
+        throw new Error("OPENROUTER_API_KEY is missing");
+      }
+
+      const response = await fetch(OPENROUTER_BASE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "HTTP-Referer": SITE_URL,
+          "X-Title": APP_NAME,
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          messages,
+          max_tokens: 400,
+          temperature: 0.2,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`OpenRouter failed (${response.status}): ${body}`);
+      }
+
+      const data = await response.json();
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) throw new Error("OpenRouter response missing content");
+      return content.trim();
+    };
+
+    const parseEditorialJson = (text: string) => {
+      let clean = text.trim();
+      if (clean.startsWith("```")) {
+        clean = clean.replace(/^```[a-zA-Z]*\s*/g, "").replace(/```$/g, "").trim();
+      }
+      return JSON.parse(clean);
+    };
+
     const newsItems = [];
 
     for (const article of allArticles.slice(0, 20)) { // Process top 20 articles
       console.log(`Processing: ${article.title}`);
 
       try {
-        // Use AI to evaluate importance and create a better summary
-        const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${Deno.env.get("LOVABLE_API_KEY")}`,
-            "Content-Type": "application/json",
+        const aiText = await callOpenRouter([
+          {
+            role: "system",
+            content: `You are an AI news analyst. For each article, return a strict JSON object with:
+{
+  "summary": "2-3 sentence concise summary",
+  "importance": <number 1-10>,
+  "category": "Technology|Research|Business",
+  "shouldPublish": true|false,
+  "headline": "engaging headline",
+  "tags": ["tag1","tag2","tag3"]
+}
+Only publish if importance >= 7. Do not include code fences.`,
           },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [
-              {
-                role: "system",
-                content: `You are an AI news analyst. Analyze the given article and provide:
-                1. A concise 2-sentence summary focusing on key information
-                2. An importance score (1-10) where:
-                   - 10: Major breakthrough (GPT-5 release, AGI milestone)
-                   - 8-9: Significant development (new AI model, major funding)
-                   - 6-7: Important update (feature launch, research paper)
-                   - 4-5: Notable news (company news, minor updates)
-                   - 1-3: Minor news
-                3. Best fitting category: Technology, Research, Business, Ethics, or Products
-                
-                Only return news with score >= 7.
-                
-                Return JSON:
-                {
-                  "summary": "concise summary",
-                  "importance": 8,
-                  "category": "category",
-                  "shouldPublish": true
-                }`
-              },
-              {
-                role: "user",
-                content: `Title: ${article.title}\n\nDescription: ${article.description}\n\nAnalyze this article.`
-              }
-            ],
-          }),
-        });
+          {
+            role: "user",
+            content: `Title: ${article.title}\nDescription: ${article.description}\nSource: ${article.source}\nCategory hint: ${article.category}`,
+          },
+        ]);
 
-        if (aiResponse.ok) {
-          const aiData = await aiResponse.json();
-          const content = aiData.choices?.[0]?.message?.content;
+        const analysis = parseEditorialJson(aiText);
 
-          if (content) {
-            let cleanContent = content.trim();
-            if (cleanContent.startsWith('```json')) {
-              cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/```\s*$/, '');
-            } else if (cleanContent.startsWith('```')) {
-              cleanContent = cleanContent.replace(/^```\s*/, '').replace(/```\s*$/, '');
-            }
+        console.log(`Article: "${article.title}" - Score: ${analysis.importance}, Publish: ${analysis.shouldPublish}`);
 
-            const analysis = JSON.parse(cleanContent);
+        if (analysis.shouldPublish && analysis.importance >= 7) {
+          const imageUrl = article.imageUrl;
 
-            console.log(`Article: "${article.title}" - Score: ${analysis.importance}, Publish: ${analysis.shouldPublish}`);
-
-            // Only publish if AI deems it important enough
-            if (analysis.shouldPublish && analysis.importance >= 7) {
-              // Use real image from RSS feed (temporarily disabled AI generation for performance)
-              const imageUrl = article.imageUrl;
-
-              newsItems.push({
-                title: article.title,
-                summary: analysis.summary || article.description.substring(0, 200),
-                category: analysis.category || article.category,
-                source: article.source,
-                source_url: article.link,
-                image_url: imageUrl || `https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&h=600&fit=crop`,
-                importance_score: analysis.importance,
-                is_featured: analysis.importance >= 9,
-                published_at: new Date(article.pubDate).toISOString(),
-              });
-            }
-          }
+          newsItems.push({
+            title: analysis.headline || article.title,
+            summary: analysis.summary || article.description.substring(0, 200),
+            category: analysis.category || article.category,
+            source: article.source,
+            source_url: article.link,
+            image_url: imageUrl || `https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&h=600&fit=crop`,
+            importance_score: analysis.importance,
+            is_featured: analysis.importance >= 9,
+            published_at: new Date(article.pubDate).toISOString(),
+          });
         }
       } catch (error) {
         console.error(`Error processing article: ${error instanceof Error ? error.message : 'Unknown error'}`);

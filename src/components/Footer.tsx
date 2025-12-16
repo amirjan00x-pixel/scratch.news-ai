@@ -2,48 +2,63 @@ import { Link } from "react-router-dom";
 
 export const Footer = () => {
   return (
-    <footer className="border-t border-border bg-background mt-16">
-      <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+    <footer className="mt-24 bg-[#0B1424] bg-[radial-gradient(circle_at_top,#1E2C4D,transparent)] text-[#F3F7FF]">
+      <div className="mx-auto w-full max-w-[1440px] px-4 py-16 sm:px-6 lg:px-[120px]">
+        <div className="grid gap-10 lg:grid-cols-4">
           <div>
-            <h3 className="font-bold text-lg mb-4">About</h3>
-            <p className="text-sm text-muted-foreground">
-              Your trusted source for the latest AI news, research, and breakthroughs from around the world.
+            <div className="flex items-center gap-3">
+              <img src="/ai-logo.svg" alt="AI Nexus" className="h-12 w-12 rounded-2xl bg-white/10 p-2" />
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-white/60">AI Nexus</p>
+                <h3 className="text-2xl font-semibold text-white">Global AI Briefings</h3>
+              </div>
+            </div>
+            <p className="mt-4 text-sm text-white/70">
+              We curate real-time AI intelligence, research breakthroughs, and strategic insights for technology leaders worldwide.
             </p>
           </div>
-          
+
           <div>
-            <h3 className="font-bold text-lg mb-4">Categories</h3>
-            <ul className="space-y-2 text-sm">
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Technology</Link></li>
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Research</Link></li>
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Business</Link></li>
+            <h3 className="text-lg font-semibold text-white">Quick Links</h3>
+            <ul className="mt-4 space-y-2 text-sm">
+              <li><Link to="/" className="transition hover:text-[hsl(var(--neon-cyan))]">Home</Link></li>
+              <li><Link to="/weekly" className="transition hover:text-[hsl(var(--neon-cyan))]">Weekly Top 10</Link></li>
+              <li><Link to="/guides" className="transition hover:text-[hsl(var(--neon-cyan))]">Guides</Link></li>
+              <li><Link to="/tracker" className="transition hover:text-[hsl(var(--neon-cyan))]">AI Tracker</Link></li>
             </ul>
           </div>
-          
+
           <div>
-            <h3 className="font-bold text-lg mb-4">Resources</h3>
-            <ul className="space-y-2 text-sm">
-              <li><Link to="/history" className="text-muted-foreground hover:text-foreground transition-colors">AI History</Link></li>
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Newsletter</Link></li>
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">API</Link></li>
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">RSS Feed</Link></li>
+            <h3 className="text-lg font-semibold text-white">Resources</h3>
+            <ul className="mt-4 space-y-2 text-sm">
+              <li><Link to="/history" className="transition hover:text-[hsl(var(--neon-cyan))]">AI History</Link></li>
+              <li><Link to="/" className="transition hover:text-[hsl(var(--neon-cyan))]">Newsletter</Link></li>
+              <li><Link to="/" className="transition hover:text-[hsl(var(--neon-cyan))]">API Access</Link></li>
+              <li><Link to="/" className="transition hover:text-[hsl(var(--neon-cyan))]">RSS Feed</Link></li>
             </ul>
           </div>
-          
+
           <div>
-            <h3 className="font-bold text-lg mb-4">Connect</h3>
-            <ul className="space-y-2 text-sm">
-              <li><a href="https://twitter.com" className="text-muted-foreground hover:text-foreground transition-colors">Twitter</a></li>
-              <li><a href="https://github.com" className="text-muted-foreground hover:text-foreground transition-colors">GitHub</a></li>
-              <li><a href="https://linkedin.com" className="text-muted-foreground hover:text-foreground transition-colors">LinkedIn</a></li>
-              <li><Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">Contact</Link></li>
-            </ul>
+            <h3 className="text-lg font-semibold text-white">Newsletter</h3>
+            <p className="mt-4 text-sm text-white/70">Weekly digest with trends, funding rounds, and research briefs.</p>
+            <form className="mt-4 space-y-3">
+              <input
+                type="email"
+                placeholder="Email address"
+                className="w-full rounded-full border border-white/30 bg-transparent px-4 py-2 text-sm text-white placeholder:text-white/60 focus:border-white focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="w-full rounded-full bg-white/90 px-4 py-2 text-sm font-semibold uppercase tracking-[0.4em] text-[#0B1424] transition hover:bg-white"
+              >
+                Join
+              </button>
+            </form>
           </div>
         </div>
-        
-        <div className="border-t border-border mt-8 pt-8 text-center text-sm text-muted-foreground">
-          <p>© 2025 AI News. All rights reserved. Powered by AI aggregation technology.</p>
+
+        <div className="mt-12 border-t border-white/10 pt-6 text-center text-xs uppercase tracking-[0.4em] text-white/50">
+          © {new Date().getFullYear()} AI Nexus. All Rights Reserved.
         </div>
       </div>
     </footer>

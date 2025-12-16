@@ -1,0 +1,4 @@
+import requests
+url='https://zzwmfndcunosovwxyzem.supabase.co/rest/v1/news_articles'
+params={'select':'id','limit':1}
+headers={'apikey':'peyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6d21mbmRjdW5vc292d3h5emVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0NDk0NjUsImV4cCI6MjA4MDAyNTQ2NX0.uDo7sFsxet6HY8SFLK0hpLb51Q1O7_9p_geqeBOAdlk','Authorization':'Bearer peyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6d21mbmRjdW5vc292d3h5emVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0NDk0NjUsImV4cCI6MjA4MDAyNTQ2NX0.uDo7sFsxet6HY8SFLK0hpLb51Q1O7_9p_geqeBOAdlk'}

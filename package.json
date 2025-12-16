@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "server": "npm --prefix server run start"
+    "server": "npm --prefix server run start",
+    "images:backfill": "npm --prefix server run backfill-images"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

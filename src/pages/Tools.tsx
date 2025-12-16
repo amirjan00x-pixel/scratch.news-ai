@@ -9,15 +9,33 @@ import { formatDistanceToNow } from "date-fns";
 import { ArticleCategory } from "@/constants/categories";
 
 const TOOLS_CATEGORY: ArticleCategory = "Technology";
+const TOOLS_FILTERS = [
+  "title.ilike.%tool%",
+  "title.ilike.%tools%",
+  "title.ilike.%app%",
+  "title.ilike.%platform%",
+  "title.ilike.%product%",
+  "title.ilike.%agent%",
+  "title.ilike.%copilot%",
+  "title.ilike.%assistant%",
+  "title.ilike.%plugin%",
+  "title.ilike.%workflow%",
+  "summary.ilike.%tool%",
+  "summary.ilike.%platform%",
+  "summary.ilike.%product%",
+  "summary.ilike.%automation%",
+  "summary.ilike.%workflow%"
+];
 
 const Tools = () => {
   const { data: articles, isLoading } = useQuery({
-    queryKey: ['tools-articles'],
+    queryKey: ['tools-articles', TOOLS_CATEGORY],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('news_articles')
         .select('*')
         .eq('category', TOOLS_CATEGORY)
+        .or(TOOLS_FILTERS.join(','))
         .order('published_at', { ascending: false })
         .limit(20);
       
