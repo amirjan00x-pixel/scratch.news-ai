@@ -15,26 +15,30 @@ serve(async (req) => {
   try {
     console.log('Starting AI post generation...');
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const SITE_URL = Deno.env.get('OPENROUTER_SITE_URL') ?? 'https://github.com/new20/scratch.news-ai';
+    const APP_NAME = Deno.env.get('OPENROUTER_APP_NAME') ?? 'scratch.news-ai';
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    if (!OPENROUTER_API_KEY) {
+      throw new Error('OPENROUTER_API_KEY not configured');
     }
 
     // Initialize Supabase client
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    // Call Lovable AI to generate post content
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Call OpenRouter API with nvidia/nemotron-3-nano-30b-a3b:free model
+    const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
+        'HTTP-Referer': SITE_URL,
+        'X-Title': APP_NAME,
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'nvidia/nemotron-3-nano-30b-a3b:free',
         messages: [
           {
             role: 'system',
@@ -45,6 +49,8 @@ serve(async (req) => {
             content: 'Generate a new blog post about an interesting topic. Make it informative and engaging.'
           }
         ],
+        max_tokens: 1500,
+        temperature: 0.7,
       }),
     });
 

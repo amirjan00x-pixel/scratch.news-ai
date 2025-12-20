@@ -1,8 +1,10 @@
+import dotenv from 'dotenv';
+dotenv.config(); // MUST be before any imports that use process.env
+
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import Parser from 'rss-parser';
-import dotenv from 'dotenv';
 import he from 'he';
 import { load as loadHtml } from 'cheerio';
 import fs from 'fs';
@@ -21,8 +23,6 @@ const readJsonRelative = (relativePath) => {
 
 const categoriesConfig = readJsonRelative('../shared/article-categories.json');
 const sourcesTsvPath = path.resolve(__dirname, '../shared/ai-sources.tsv');
-
-dotenv.config();
 
 const requiredEnvVars = [
     'VITE_SUPABASE_URL',
@@ -588,7 +588,7 @@ function extractHtmlImages(html, base) {
                 if (Array.isArray(json.image)) urls.push(...json.image);
                 else urls.push(json.image);
             }
-        } catch {}
+        } catch { }
     });
 
     return urls
@@ -850,37 +850,91 @@ function formatEditorialSummary({ summarySentences, highlights, keywords, narrat
     return clampText(blocks.join('\n\n'));
 }
 
-function createEditorialPackage({ title, snippet, body, source }) {
+// AI-powered summarization using OpenRouter (nvidia/nemotron-3-nano-30b-a3b:free)
+// Retry with exponential backoff, no fallback to manual summarization
+async function generateAIEditorialPackage({ title, snippet, body, source, category }) {
     const combined = [snippet, body].filter(Boolean).join(' ').trim();
     if (!combined) {
         return {
             formattedSummary: sanitizeText(snippet || body || title || ''),
             keywords: [],
-            highlights: []
+            highlights: [],
+            headline: title
         };
     }
 
-    const sentences = splitIntoSentences(combined);
-    const freqMap = buildFrequencyMap(combined);
-    const summarySentences = selectTopSentences(sentences, freqMap, 3);
-    const remainingSentences = sentences.filter(
-        (sentence) => !summarySentences.includes(sentence)
-    );
-    const highlights = selectTopSentences(remainingSentences, freqMap, 3);
-    const keywords = extractTopKeywords(freqMap, 5);
-    const narrative = buildNarrativeParagraph(title, source, keywords);
-    const formattedSummary = formatEditorialSummary({
-        summarySentences,
-        highlights,
-        keywords,
-        narrative
-    });
+    const prompt = `Analyze this AI news article and return a strict JSON response:
 
-    return {
-        formattedSummary,
-        keywords,
-        highlights
-    };
+Title: ${title}
+Source: ${source}
+Category: ${category || 'Technology'}
+Content: ${combined.slice(0, 1500)}
+
+Return ONLY valid JSON (no code fences, no markdown):
+{
+  "summary": "2-3 sentence concise summary highlighting key points",
+  "headline": "engaging headline that captures the essence",
+  "highlights": ["key point 1", "key point 2", "key point 3"],
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+}`;
+
+    const systemPrompt = `You are an AI news analyst. Analyze articles and return structured JSON with summary, headline, highlights, and tags. Be concise and focus on AI/technology relevance. Never include code fences or markdown in your response.`;
+
+    const MAX_RETRIES = 3;
+    const BASE_DELAY_MS = 1000;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const aiResponse = await generateWithOpenRouter({
+                prompt,
+                systemPrompt,
+                temperature: 0.3,
+                maxTokens: 500
+            });
+
+            // Parse the AI response
+            let cleanResponse = aiResponse.trim();
+
+            // Remove code fences if present
+            if (cleanResponse.startsWith('```')) {
+                cleanResponse = cleanResponse.replace(/^```[a-zA-Z]*\s*/g, '').replace(/```$/g, '').trim();
+            }
+
+            const parsed = JSON.parse(cleanResponse);
+
+            const formattedSummary = formatEditorialSummary({
+                summarySentences: [parsed.summary || ''],
+                highlights: parsed.highlights || [],
+                keywords: parsed.tags || [],
+                narrative: `${source} reports on developments in ${category || 'AI technology'}.`
+            });
+
+            return {
+                formattedSummary,
+                keywords: parsed.tags || [],
+                highlights: parsed.highlights || [],
+                headline: parsed.headline || title
+            };
+        } catch (error) {
+            const isLastAttempt = attempt === MAX_RETRIES;
+            const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+
+            if (isLastAttempt) {
+                console.error(`AI summarization failed for "${title}" after ${MAX_RETRIES} attempts: ${error.message}. Skipping article.`);
+                return null; // Signal to skip this article
+            } else {
+                console.warn(`AI summarization attempt ${attempt}/${MAX_RETRIES} failed for "${title}": ${error.message}. Retrying in ${delayMs}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+    }
+
+    return null; // Should not reach here, but safety fallback
+}
+
+// Main editorial package function - uses AI only (no manual fallback)
+async function createEditorialPackage({ title, snippet, body, source, category }) {
+    return generateAIEditorialPackage({ title, snippet, body, source, category });
 }
 
 function applyContentFilters({ title, summary, body, source, minWordCount }) {
@@ -953,10 +1007,10 @@ async function buildArticleRecord(item, feed) {
     const cleanSnippet = sanitizeText(summarySource) || 'No summary available';
     const articleBody = sanitizeText(
         item['content:encoded'] ||
-            item.content ||
-            item.summary ||
-            item.description ||
-            ''
+        item.content ||
+        item.summary ||
+        item.description ||
+        ''
     );
 
     const minWordCount = feed.type === 'podcast' || feed.type.startsWith('youtube') ? 10 : CONTENT_FILTER_RULES.minWordCount;
@@ -975,12 +1029,19 @@ async function buildArticleRecord(item, feed) {
         return null;
     }
 
-    const editorialPackage = createEditorialPackage({
+    const editorialPackage = await createEditorialPackage({
         title,
         snippet: cleanSnippet,
         body: articleBody,
-        source: feed.name
+        source: feed.name,
+        category: feed.category
     });
+
+    // If AI summarization failed after all retries, skip this article
+    if (!editorialPackage) {
+        console.log(`Skipped item from ${feed.name}: "${title}" - AI summarization failed after retries.`);
+        return null;
+    }
 
     const summary = editorialPackage.formattedSummary || cleanSnippet;
     const importanceScore = calculateImportanceScore(title, summary, feed.name);

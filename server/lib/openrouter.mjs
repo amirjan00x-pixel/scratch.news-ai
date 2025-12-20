@@ -1,20 +1,14 @@
-const OPENROUTER_BASE_URL =
-    process.env.OPENROUTER_BASE_URL?.trim() ||
-    'https://openrouter.ai/api/v1';
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY?.trim() || '';
-const OPENROUTER_DEFAULT_MODEL =
-    process.env.OPENROUTER_DEFAULT_MODEL?.trim() ||
-    'nvidia/nemotron-3-nano-30b-a3b:free';
-const OPENROUTER_SITE_URL =
-    process.env.OPENROUTER_SITE_URL ||
-    'https://github.com/new20/scratch.news-ai';
-const OPENROUTER_APP_NAME =
-    process.env.OPENROUTER_APP_NAME || 'scratch.news-ai';
-const OPENROUTER_TIMEOUT_MS = Number(
-    process.env.OPENROUTER_TIMEOUT_MS || '20000'
-);
+// Read at runtime, not module load time
+const getConfig = () => ({
+    baseUrl: process.env.OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1',
+    apiKey: process.env.OPENROUTER_API_KEY?.trim() || '',
+    defaultModel: process.env.OPENROUTER_DEFAULT_MODEL?.trim() || 'nvidia/nemotron-3-nano-30b-a3b:free',
+    siteUrl: process.env.OPENROUTER_SITE_URL || 'https://github.com/new20/scratch.news-ai',
+    appName: process.env.OPENROUTER_APP_NAME || 'scratch.news-ai',
+    timeoutMs: Number(process.env.OPENROUTER_TIMEOUT_MS || '20000')
+});
 
-function withTimeout(timeoutMs = OPENROUTER_TIMEOUT_MS) {
+function withTimeout(timeoutMs) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     return {
@@ -24,28 +18,31 @@ function withTimeout(timeoutMs = OPENROUTER_TIMEOUT_MS) {
 }
 
 function ensureKey() {
-    if (!OPENROUTER_API_KEY) {
+    const config = getConfig();
+    if (!config.apiKey) {
         throw new Error(
             'OPENROUTER_API_KEY is missing. Please set it in server/.env.'
         );
     }
+    return config;
 }
 
 export async function generateWithOpenRouter({
     prompt,
-    model = OPENROUTER_DEFAULT_MODEL,
+    model,
     temperature = 0.2,
     maxTokens = 400,
     systemPrompt = 'You are a concise AI assistant.'
 }) {
-    ensureKey();
+    const config = ensureKey();
+    const useModel = model || config.defaultModel;
 
     if (!prompt) {
         throw new Error('generateWithOpenRouter requires a prompt string.');
     }
 
     const payload = {
-        model,
+        model: useModel,
         temperature,
         max_tokens: maxTokens,
         messages: [
@@ -54,18 +51,18 @@ export async function generateWithOpenRouter({
         ]
     };
 
-    const endpoint = `${OPENROUTER_BASE_URL.replace(
+    const endpoint = `${config.baseUrl.replace(
         /\/$/,
         ''
     )}/chat/completions`;
     const headers = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-        'HTTP-Referer': OPENROUTER_SITE_URL,
-        'X-Title': OPENROUTER_APP_NAME
+        Authorization: `Bearer ${config.apiKey}`,
+        'HTTP-Referer': config.siteUrl,
+        'X-Title': config.appName
     };
 
-    const { signal, clear } = withTimeout();
+    const { signal, clear } = withTimeout(config.timeoutMs);
 
     try {
         const response = await fetch(endpoint, {
@@ -98,7 +95,7 @@ export async function generateWithOpenRouter({
     } catch (error) {
         if (error.name === 'AbortError') {
             throw new Error(
-                `Timed out after ${OPENROUTER_TIMEOUT_MS}ms waiting for OpenRouter response.`
+                `Timed out waiting for OpenRouter response.`
             );
         }
         throw new Error(`OpenRouter request failed: ${error.message}`);
