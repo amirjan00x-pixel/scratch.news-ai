@@ -7,6 +7,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const logErrorDetails = (context: string, err: unknown) => {
+  const error = err as { message?: string; status?: number; response?: { data?: unknown } };
+  console.error(context, {
+    message: error?.message ?? String(err ?? 'Unknown error'),
+    status: error?.status,
+    responseData: error?.response?.data
+  });
+};
+
+const logSupabaseError = (context: string, data: unknown, error: unknown) => {
+  console.error(context, { data, error });
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -74,7 +87,8 @@ serve(async (req) => {
       const parsed = JSON.parse(generatedText);
       title = parsed.title || 'Untitled Post';
       content = parsed.content || generatedText;
-    } catch {
+    } catch (error) {
+      logErrorDetails('Failed to parse AI response as JSON', error);
       // If not JSON, extract title and content from text
       const lines = generatedText.split('\n').filter((line: string) => line.trim());
       title = lines[0]?.replace(/^#+\s*/, '').replace(/^["']|["']$/g, '').trim() || 'Generated Post';
@@ -92,7 +106,7 @@ serve(async (req) => {
       .single();
 
     if (insertError) {
-      console.error('Database insert error:', insertError);
+      logSupabaseError('Database insert error', newPost, insertError);
       throw insertError;
     }
 
@@ -111,7 +125,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Error in generate-post function:', error);
+    logErrorDetails('Error in generate-post function', error);
     return new Response(
       JSON.stringify({ 
         error: error instanceof Error ? error.message : 'Unknown error',

@@ -6,6 +6,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const logErrorDetails = (context: string, err: unknown) => {
+  const error = err as { message?: string; status?: number; response?: { data?: unknown } };
+  console.error(context, {
+    message: error?.message ?? String(err ?? 'Unknown error'),
+    status: error?.status,
+    responseData: error?.response?.data
+  });
+};
+
+const logSupabaseError = (context: string, data: unknown, error: unknown) => {
+  console.error(context, { data, error });
+};
+
 // Real RSS feeds from trusted AI news sources
 const RSS_FEEDS = [
   {
@@ -125,7 +138,7 @@ async function parseRSSFeed(feedUrl: string, sourceName: string, category: strin
     console.log(`Found ${articles.length} articles from ${sourceName}`);
     return articles.slice(0, 5); // Take top 5 from each source
   } catch (error) {
-    console.error(`Error parsing RSS from ${sourceName}:`, error);
+    logErrorDetails(`Error parsing RSS from ${sourceName}`, error);
     return [];
   }
 }
@@ -252,7 +265,7 @@ Only publish if importance >= 7. Do not include code fences.`,
           });
         }
       } catch (error) {
-        console.error(`Error processing article: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        logErrorDetails('Error processing article', error);
       }
     }
 
@@ -264,7 +277,7 @@ Only publish if importance >= 7. Do not include code fences.`,
         .select();
 
       if (error) {
-        console.error("Error inserting news:", error);
+        logSupabaseError('Error inserting news', data, error);
         throw error;
       }
 
@@ -286,7 +299,7 @@ Only publish if importance >= 7. Do not include code fences.`,
     );
 
   } catch (error) {
-    console.error("Error in aggregate-ai-news:", error);
+    logErrorDetails('Error in aggregate-ai-news', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
       {

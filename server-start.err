@@ -1,0 +1,37 @@
+YouTube cache read failed {
+  message: "ENOENT: no such file or directory, open 'C:\\new-aipluse\\scratch.news-ai\\server\\.cache\\youtube-feeds.json'",
+  status: undefined,
+  responseData: undefined
+}
+HF_API_TOKEN or HF_IMAGE_MODEL is missing. Falling back to static images.
+Unable to prefetch existing images for merge protection {
+  data: null,
+  error: {
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n' +
+      '\n' +
+      'Caused by: Error: getaddrinfo ENOTFOUND example.supabase.co (ENOTFOUND)\n' +
+      'Error: getaddrinfo ENOTFOUND example.supabase.co\n' +
+      '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+    hint: '',
+    code: ''
+  }
+}
+Database upsert error {
+  data: null,
+  error: {
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n' +
+      '\n' +
+      'Caused by: Error: getaddrinfo ENOTFOUND example.supabase.co (ENOTFOUND)\n' +
+      'Error: getaddrinfo ENOTFOUND example.supabase.co\n' +
+      '    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)',
+    hint: '',
+    code: ''
+  }
+}
+Fetch news failed {
+  message: 'TypeError: fetch failed',
+  status: undefined,
+  responseData: undefined
+}

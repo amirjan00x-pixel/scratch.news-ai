@@ -1,5 +1,14 @@
 import { detectOllamaModel, generateWithOllama } from './lib/ollama.mjs';
 
+const logErrorDetails = (context, err) => {
+    const error = err ?? {};
+    console.error(context, {
+        message: error?.message ?? String(err ?? 'Unknown error'),
+        status: error?.status,
+        responseData: error?.response?.data
+    });
+};
+
 async function main() {
     try {
         const model = await detectOllamaModel();
@@ -17,7 +26,7 @@ async function main() {
         console.log('\n=== Ollama Response ===\n');
         console.log(output);
     } catch (error) {
-        console.error('Ollama test failed:', error.message);
+        logErrorDetails('Ollama test failed', error);
         process.exit(1);
     }
 }

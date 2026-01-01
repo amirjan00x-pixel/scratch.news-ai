@@ -7,6 +7,15 @@ import { useAdminAuth } from "@/context/AdminAuthContext";
 
 const API_BASE_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3001";
 
+const logClientError = (context: string, err: unknown) => {
+    const error = err as { message?: string; status?: number; response?: { data?: unknown } };
+    console.error(context, {
+        message: error?.message ?? String(err ?? "Unknown error"),
+        status: error?.status,
+        responseData: error?.response?.data,
+    });
+};
+
 const Admin = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [adminKeyInput, setAdminKeyInput] = useState("");
@@ -56,6 +65,7 @@ const Admin = () => {
                 throw new Error(data.error || "Failed to fetch news");
             }
         } catch (error) {
+            logClientError("Fetch news failed", error);
             toast({
                 title: "Error",
                 description: error instanceof Error ? error.message : "Failed to fetch news",

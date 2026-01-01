@@ -13,6 +13,22 @@ if (missingEnv.length) {
     process.exit(1);
 }
 
+const logErrorDetails = (context, err) => {
+    const error = err ?? {};
+    console.error(context, {
+        message: error?.message ?? String(err ?? 'Unknown error'),
+        status: error?.status,
+        responseData: error?.response?.data
+    });
+};
+
+const logSupabaseError = (context, data, error) => {
+    console.error(context, {
+        data,
+        error
+    });
+};
+
 const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -451,7 +467,7 @@ async function resolveImageUrl(article) {
                 );
             }
         } catch (error) {
-            console.error(`Unsplash request failed for "${query}":`, error.message);
+            logErrorDetails(`Unsplash request failed for "${query}"`, error);
         }
 
         if (PIXABAY_API_KEY) {
@@ -485,10 +501,7 @@ async function resolveImageUrl(article) {
                     );
                 }
             } catch (error) {
-                console.error(
-                    `Pixabay request failed for "${query}":`,
-                    error.message
-                );
+                logErrorDetails(`Pixabay request failed for "${query}"`, error);
             }
         }
 
@@ -517,6 +530,7 @@ async function fetchArticlesNeedingImages(limit = BATCH_SIZE) {
         .limit(limit);
 
     if (error) {
+        logSupabaseError('Failed to fetch articles needing images', data, error);
         throw error;
     }
 
@@ -524,12 +538,13 @@ async function fetchArticlesNeedingImages(limit = BATCH_SIZE) {
 }
 
 async function updateArticleImage(id, imageUrl) {
-    const { error } = await supabase
+    const { data, error } = await supabase
         .from('news_articles')
         .update({ image_url: imageUrl })
         .eq('id', id);
 
     if (error) {
+        logSupabaseError(`Failed to update image for article ${id}`, data, error);
         throw error;
     }
 }
@@ -567,7 +582,7 @@ async function backfillImages() {
             );
             await sleep(350);
         } catch (error) {
-            console.error(`Failed to update "${article.title}":`, error.message);
+            logErrorDetails(`Failed to update "${article.title}"`, error);
         }
     }
 
@@ -577,6 +592,6 @@ async function backfillImages() {
 }
 
 backfillImages().catch((error) => {
-    console.error('Image backfill failed:', error);
+    logErrorDetails('Image backfill failed', error);
     process.exit(1);
 });

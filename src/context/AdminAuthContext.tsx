@@ -14,6 +14,15 @@ const AdminAuthContext = createContext<AdminAuthContextValue | undefined>(undefi
 const STORAGE_KEY = "news_admin_key";
 const API_BASE_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3001";
 
+const logClientError = (context: string, err: unknown) => {
+  const error = err as { message?: string; status?: number; response?: { data?: unknown } };
+  console.error(context, {
+    message: error?.message ?? String(err ?? "Unknown error"),
+    status: error?.status,
+    responseData: error?.response?.data,
+  });
+};
+
 export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminKey, setAdminKey] = useState<string | null>(null);
@@ -48,6 +57,7 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
       sessionStorage.setItem(STORAGE_KEY, key);
       return true;
     } catch (error) {
+      logClientError("Admin authentication failed", error);
       sessionStorage.removeItem(STORAGE_KEY);
       setIsAdmin(false);
       setAdminKey(null);

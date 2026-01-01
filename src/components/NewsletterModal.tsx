@@ -20,6 +20,15 @@ const emailSchema = z.object({
     .toLowerCase(),
 });
 
+const logClientError = (context: string, err: unknown) => {
+  const error = err as { message?: string; status?: number; response?: { data?: unknown } };
+  console.error(context, {
+    message: error?.message ?? String(err ?? "Unknown error"),
+    status: error?.status,
+    responseData: error?.response?.data,
+  });
+};
+
 const buildNewsletterEndpoint = () => {
   const configuredUrl = import.meta.env.VITE_SERVER_URL?.trim();
   if (!configuredUrl) {
@@ -84,7 +93,8 @@ export const NewsletterModal = ({ open, onOpenChange }: NewsletterModalProps) =>
       let payload: { message?: string; error?: string } | null = null;
       try {
         payload = await response.json();
-      } catch {
+      } catch (error) {
+        logClientError("Failed to parse newsletter response body", error);
         payload = null;
       }
 
@@ -116,7 +126,8 @@ export const NewsletterModal = ({ open, onOpenChange }: NewsletterModalProps) =>
       });
       setEmail("");
       onOpenChange(false);
-    } catch {
+    } catch (error) {
+      logClientError("Newsletter subscription request failed", error);
       const fallbackMessage = "Failed to subscribe. Please check your connection and try again.";
       setStatusMessage({
         type: "error",

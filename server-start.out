@@ -1,0 +1,29 @@
+News fetcher server running on http://localhost:3001
+Fetching from MarkTechPost...
+OpenRouter model in use: xiaomi/mimo-v2-flash:free
+OpenRouter keyLength: 73
+OpenRouter raw response (first call):
+
+         
+
+         
+
+         
+
+         
+
+         
+
+         
+{"id":"gen-1767147314-XNWEYvKiHjHCIwos753e","provider":"Xiaomi","model":"xiaomi/mimo-v2-flash:free","object":"chat.completion","created":1767147314,"choices":[{"logprobs":null,"finish_reason":"stop","native_finish_reason":"stop","index":0,"message":{"role":"assistant","content":"{\n  \"summary\": \"LLMRouter is an open-source routing library from the University of Illinois Urbana-Champaign's U Lab that optimizes LLM inference by dynamically selecting the most suitable model for each query based on task complexity, quality targets, and cost. It provides a unified Python API and CLI, featuring over 16 routing models, a data generation pipeline across 11 benchmarks, and a plugin system for custom routers.\",\n  \"headline\": \"LLMRouter: Dynamic Model Routing for Optimized LLM Inference\",\n  \"highlights\": [\n    \"Open-source library treating model selection as a core system problem\",\n    \"Supports four router families: Single-Round, Multi-Round, Personalized, and Agentic\",\n    \"Includes 16+ routing models like kNN, SVM, and ELO-based strategies\"\n  ],\n  \"tags\": [\"LLM Optimization\", \"Model Routing\", \"Open Source AI\", \"Inference Efficiency\", \"University Research\"]\n}","refusal":null,"reasoning":null}}],"usage":{"prompt_tokens":525,"completion_tokens":204,"total_tokens":729,"cost":0,"is_byok":false,"prompt_tokens_details":{"cached_tokens":0,"audio_tokens":0,"video_tokens":0},"cost_details":{"upstream_inference_cost":null,"upstream_inference_prompt_cost":0,"upstream_inference_completions_cost":0},"completion_tokens_details":{"reasoning_tokens":0,"image_tokens":0}}}
+No usable image found in RSS item for "Meet LLMRouter: An Intelligent Routing System designed to Optimize LLM Inference by Dynamically Selecting the most Suitable Model for Each Query" (MarkTechPost).
+No usable image found in RSS item for "Alibaba Tongyi Lab Releases MAI-UI: A Foundation GUI Agent Family that Surpasses Gemini 2.5 Pro, Seed1.8 and UI-Tars-2 on AndroidWorld" (MarkTechPost).
+No usable image found in RSS item for "A Coding Implementation on Building Self-Organizing Zettelkasten Knowledge Graphs and Sleep-Consolidation Mechanisms" (MarkTechPost).
+No usable image found in RSS item for "NVIDIA AI Researchers Release NitroGen: An Open Vision Action Foundation Model For Generalist Gaming Agents" (MarkTechPost).
+No usable image found in RSS item for "How to Build a Robust Multi-Agent Pipeline Using CAMEL with Planning, Web-Augmented Reasoning, Critique, and Persistent Memory" (MarkTechPost).
+No usable image found in RSS item for "How to Build Contract-First Agentic Decision Systems with PydanticAI for Risk-Aware, Policy-Compliant Enterprise AI" (MarkTechPost).
+No usable image found in RSS item for "Liquid AI’s LFM2-2.6B-Exp Uses Pure Reinforcement Learning RL And Dynamic Hybrid Reasoning To Tighten Small Model Behavior" (MarkTechPost).
+No usable image found in RSS item for "From Gemma 3 270M to FunctionGemma, How Google AI Built a Compact Function Calling Specialist for Edge Workloads" (MarkTechPost).
+No usable image found in RSS item for "A Coding Implementation of an OpenAI-Assisted Privacy-Preserving Federated Fraud Detection System from Scratch Using Lightweight PyTorch Simulations" (MarkTechPost).
+Found 9 important articles from MarkTechPost
+Upserting 5 articles into database...

@@ -28,14 +28,15 @@ const requiredEnvVars = [
     'VITE_SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',
     'ADMIN_API_KEY',
-    'API_ALLOWED_ORIGINS'
+    'API_ALLOWED_ORIGINS',
+    'OPENROUTER_API_KEY'
 ];
 const missingEnv = requiredEnvVars.filter((name) => !process.env[name]);
 
 if (missingEnv.length) {
-    throw new Error(
-        `Missing required environment variables: ${missingEnv.join(', ')}`
-    );
+    const message = `Missing required environment variables: ${missingEnv.join(', ')}`;
+    console.error(message);
+    throw new Error(message);
 }
 
 const ARTICLE_CATEGORIES = categoriesConfig.articleCategories;
@@ -181,7 +182,8 @@ function loadYoutubeCache() {
     try {
         const raw = fs.readFileSync(YOUTUBE_CACHE_PATH, 'utf-8');
         return JSON.parse(raw);
-    } catch {
+    } catch (error) {
+        logErrorDetails('YouTube cache read failed', error);
         return {};
     }
 }
@@ -228,7 +230,7 @@ async function resolveYoutubeRssUrl(mainUrl) {
         const jsonMatch = html.match(/\"channelId\"\s*:\s*\"(UC[a-zA-Z0-9_-]+)\"/);
         if (jsonMatch) return youtubeRssFromChannelId(jsonMatch[1]);
     } catch (err) {
-        console.warn(`YouTube resolve failed for ${url}: ${getErrorMessage(err)}`);
+        logErrorDetails(`YouTube resolve failed for ${url}`, err);
     }
 
     return null;
@@ -291,6 +293,33 @@ const sanitizeSourceTag = (value = '') =>
         .trim();
 const getErrorMessage = (err) => (err instanceof Error ? err.message : String(err ?? 'Unknown error'));
 
+const logErrorDetails = (context, err) => {
+    const error = err ?? {};
+    console.error(context, {
+        message: error?.message ?? String(err ?? 'Unknown error'),
+        status: error?.status,
+        responseData: error?.response?.data
+    });
+};
+
+const logSupabaseError = (context, data, error) => {
+    console.error(context, {
+        data,
+        error
+    });
+};
+
+const SUPABASE_PROJECT_REF = (() => {
+    try {
+        const url = new URL(process.env.VITE_SUPABASE_URL);
+        const hostname = url.hostname || '';
+        return hostname.split('.')[0] || null;
+    } catch (error) {
+        logErrorDetails('Failed to parse VITE_SUPABASE_URL for project ref', error);
+        return null;
+    }
+})();
+
 const requireAdminApiKey = (req, res, next) => {
     const providedKey = req.get('x-api-key');
     if (!providedKey || providedKey !== ADMIN_API_KEY) {
@@ -318,10 +347,20 @@ app.use(express.json());
 
 const AI_SOURCES = loadAiSources();
 
-const MAX_SOURCES_PER_RUN = Number.parseInt(
-    process.env.MAX_SOURCES_PER_RUN || '30',
-    10
-);
+const buildDebugInfo = (metrics) => ({
+    supabaseProjectRef: SUPABASE_PROJECT_REF,
+    sourcesLoadedCount: AI_SOURCES.length,
+    categoriesLoadedCount: ARTICLE_CATEGORIES.length,
+    openrouterEnabled: Boolean(process.env.OPENROUTER_API_KEY),
+    articlesFetchedCount: metrics.articlesFetchedCount,
+    articlesSummarizedCount: metrics.articlesSummarizedCount,
+    upsertedCount: metrics.upsertedCount
+});
+
+const getMaxSourcesPerRun = (selfTest) => {
+    if (selfTest) return 2;
+    return Number.parseInt(process.env.MAX_SOURCES_PER_RUN || '30', 10);
+};
 
 async function buildFeedList() {
     const youtubeCache = loadYoutubeCache();
@@ -552,7 +591,8 @@ function isGeneratedFallback(url) {
 function absoluteUrl(url, base) {
     try {
         return new URL(url, base).href;
-    } catch {
+    } catch (error) {
+        logErrorDetails('Failed to build absolute URL', error);
         return null;
     }
 }
@@ -588,7 +628,9 @@ function extractHtmlImages(html, base) {
                 if (Array.isArray(json.image)) urls.push(...json.image);
                 else urls.push(json.image);
             }
-        } catch { }
+        } catch (error) {
+            logErrorDetails('Failed to parse JSON-LD image data', error);
+        }
     });
 
     return urls
@@ -734,7 +776,7 @@ async function requestHuggingFaceImage(prompt) {
 
         return bufferToDataUrl(buffer, contentType || 'image/png');
     } catch (error) {
-        console.error('Hugging Face image generation failed:', error.message);
+        logErrorDetails('Hugging Face image generation failed', error);
         return null;
     }
 }
@@ -852,6 +894,28 @@ function formatEditorialSummary({ summarySentences, highlights, keywords, narrat
 
 // AI-powered summarization using OpenRouter (nvidia/nemotron-3-nano-30b-a3b:free)
 // Retry with exponential backoff, no fallback to manual summarization
+function buildFallbackEditorialPackage({ title, snippet, body }) {
+    const fallbackSummary =
+        [snippet, body]
+            .map((value) => sanitizeText(value || ''))
+            .find((value) => value && value.length > 0) || title || 'Summary unavailable';
+
+    const summarySentences = fallbackSummary.split('.').filter(Boolean).slice(0, 2);
+    const formattedSummary = formatEditorialSummary({
+        summarySentences: summarySentences.length ? summarySentences : [fallbackSummary],
+        highlights: [],
+        keywords: [],
+        narrative: ''
+    });
+
+    return {
+        formattedSummary,
+        keywords: [],
+        highlights: [],
+        headline: title
+    };
+}
+
 async function generateAIEditorialPackage({ title, snippet, body, source, category }) {
     const combined = [snippet, body].filter(Boolean).join(' ').trim();
     if (!combined) {
@@ -920,16 +984,22 @@ Return ONLY valid JSON (no code fences, no markdown):
             const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1);
 
             if (isLastAttempt) {
-                console.error(`AI summarization failed for "${title}" after ${MAX_RETRIES} attempts: ${error.message}. Skipping article.`);
-                return null; // Signal to skip this article
+                logErrorDetails(
+                    `AI summarization failed for "${title}" after ${MAX_RETRIES} attempts`,
+                    error
+                );
+                return buildFallbackEditorialPackage({ title, snippet, body });
             } else {
-                console.warn(`AI summarization attempt ${attempt}/${MAX_RETRIES} failed for "${title}": ${error.message}. Retrying in ${delayMs}ms...`);
+                logErrorDetails(
+                    `AI summarization attempt ${attempt}/${MAX_RETRIES} failed for "${title}", retrying in ${delayMs}ms`,
+                    error
+                );
                 await new Promise(resolve => setTimeout(resolve, delayMs));
             }
         }
     }
 
-    return null; // Should not reach here, but safety fallback
+    return buildFallbackEditorialPackage({ title, snippet, body });
 }
 
 // Main editorial package function - uses AI only (no manual fallback)
@@ -993,7 +1063,7 @@ function toIsoDate(item) {
     return new Date().toISOString();
 }
 
-async function buildArticleRecord(item, feed) {
+async function buildArticleRecord(item, feed, metrics) {
     const title = sanitizeText(item.title) || 'No title';
     const sourceUrl = item.link || item.guid || null;
     if (!sourceUrl || sourceUrl === '#') {
@@ -1042,6 +1112,9 @@ async function buildArticleRecord(item, feed) {
         console.log(`Skipped item from ${feed.name}: "${title}" - AI summarization failed after retries.`);
         return null;
     }
+    if (metrics) {
+        metrics.articlesSummarizedCount += 1;
+    }
 
     const summary = editorialPackage.formattedSummary || cleanSnippet;
     const importanceScore = calculateImportanceScore(title, summary, feed.name);
@@ -1072,15 +1145,22 @@ async function buildArticleRecord(item, feed) {
     };
 }
 
-export async function fetchNews() {
+export async function fetchNews(metrics = {
+    articlesFetchedCount: 0,
+    articlesSummarizedCount: 0,
+    upsertedCount: 0
+}, options = {}) {
     const allArticles = [];
+    const selfTest = options?.selfTest === true || process.env.SELF_TEST === 'true';
+    const maxArticles = selfTest ? 5 : Infinity;
+    const maxSourcesPerRun = getMaxSourcesPerRun(selfTest);
     const feeds = await buildFeedList();
     const rssFeeds = feeds.filter(
         (feed) => typeof feed.url === 'string' && feed.url.startsWith('http')
     );
     const apiFeeds = feeds.filter((feed) => feed.type === 'research_platform_api');
 
-    const selectedFeeds = [...rssFeeds, ...apiFeeds].slice(0, MAX_SOURCES_PER_RUN);
+    const selectedFeeds = [...rssFeeds, ...apiFeeds].slice(0, maxSourcesPerRun);
 
     async function fetchHuggingFaceModels(feed) {
         // Public API: returns recently modified models.
@@ -1096,7 +1176,7 @@ export async function fetchNews() {
         const models = (await response.json()) || [];
         const now = new Date().toISOString();
 
-        return models
+        const modelItems = models
             .filter((m) => m?.id)
             .slice(0, 15)
             .map((m) => ({
@@ -1105,12 +1185,15 @@ export async function fetchNews() {
                 isoDate: m.lastModified || now,
                 contentSnippet: `Pipeline: ${m.pipeline_tag || 'unknown'}. Tags: ${(m.tags || [])
                     .slice(0, 6)
-                    .join(', ')}.`
-            }))
-            .map((item) => buildArticleRecord(item, feed));
+                .join(', ')}.`
+            }));
+
+        metrics.articlesFetchedCount += modelItems.length;
+        return modelItems.map((item) => buildArticleRecord(item, feed, metrics));
     }
 
     for (const feed of selectedFeeds) {
+        if (allArticles.length >= maxArticles) break;
         try {
             if (feed.type === 'research_platform_api') {
                 console.log(`Fetching from ${feed.name} (API)...`);
@@ -1120,7 +1203,7 @@ export async function fetchNews() {
                 const filteredArticles = candidates.filter(
                     (article) => article !== null
                 );
-                allArticles.push(...filteredArticles);
+                allArticles.push(...filteredArticles.slice(0, maxArticles - allArticles.length));
                 console.log(
                     `Found ${filteredArticles.length} important items from ${feed.name}`
                 );
@@ -1160,22 +1243,22 @@ export async function fetchNews() {
 
             const feedData = await parser.parseString(xml);
             const items = feedData.items ?? [];
+            const selectedItems = items.slice(0, 15);
+            metrics.articlesFetchedCount += selectedItems.length;
             const candidateArticles = await Promise.all(
-                items
-                    .slice(0, 15)
-                    .map((item) => buildArticleRecord(item, feed))
+                selectedItems.map((item) => buildArticleRecord(item, feed, metrics))
             );
 
             const filteredArticles = candidateArticles.filter(
                 (article) => article !== null
             );
-            allArticles.push(...filteredArticles);
+            allArticles.push(...filteredArticles.slice(0, maxArticles - allArticles.length));
 
             console.log(
                 `Found ${filteredArticles.length} important articles from ${feed.name}`
             );
         } catch (error) {
-            console.error(`Error fetching ${feed.name}:`, error.message);
+            logErrorDetails(`Error fetching ${feed.name}`, error);
         }
     }
 
@@ -1195,8 +1278,10 @@ export async function fetchNews() {
             .in('source_url', incomingUrls);
 
         if (existingError) {
-            console.warn(
-                `Unable to prefetch existing images for merge protection: ${existingError.message}`
+            logSupabaseError(
+                'Unable to prefetch existing images for merge protection',
+                existingRows,
+                existingError
             );
         } else {
             for (const row of existingRows || []) {
@@ -1252,11 +1337,12 @@ export async function fetchNews() {
         .select();
 
     if (error) {
-        console.error('Database error:', error);
+        logSupabaseError('Database upsert error', data, error);
         throw error;
     }
 
     const count = data?.length ?? 0;
+    metrics.upsertedCount = count;
     console.log(`Successfully upserted ${count} articles`);
 
     return {
@@ -1308,7 +1394,7 @@ app.post('/api/newsletter/subscribe', newsletterRateLimit, async (req, res) => {
             }
 
             const dbErrorMessage = error?.message ?? 'Unknown database error';
-            console.error('Newsletter subscription insert failed:', dbErrorMessage);
+            logSupabaseError('Newsletter subscription insert failed', data, error);
             throw error;
         }
 
@@ -1321,7 +1407,7 @@ app.post('/api/newsletter/subscribe', newsletterRateLimit, async (req, res) => {
             message: 'Thanks for subscribing!'
         });
     } catch (err) {
-        console.error('Newsletter subscription error:', getErrorMessage(err));
+        logErrorDetails('Newsletter subscription error', err);
         return res.status(500).json({
             success: false,
             error: 'Unable to complete subscription right now. Please try again later.'
@@ -1336,6 +1422,7 @@ app.get('/api/admin/newsletter/stats', adminRateLimit, requireAdminApiKey, async
             .select('id', { count: 'exact', head: true });
 
         if (error) {
+            logSupabaseError('Newsletter stats select failed', null, error);
             throw error;
         }
 
@@ -1346,7 +1433,7 @@ app.get('/api/admin/newsletter/stats', adminRateLimit, requireAdminApiKey, async
             }
         });
     } catch (error) {
-        console.error('Newsletter stats error:', getErrorMessage(error));
+        logErrorDetails('Newsletter stats error', error);
         return res.status(500).json({
             success: false,
             error: 'Unable to fetch stats right now.'
@@ -1358,15 +1445,27 @@ app.post('/api/admin/authenticate', adminRateLimit, requireAdminApiKey, (_req, r
     res.json({ success: true });
 });
 
-app.post('/api/fetch-news', adminRateLimit, requireAdminApiKey, async (_req, res) => {
+app.post('/api/fetch-news', adminRateLimit, requireAdminApiKey, async (req, res) => {
+    const metrics = {
+        articlesFetchedCount: 0,
+        articlesSummarizedCount: 0,
+        upsertedCount: 0
+    };
     try {
-        const result = await fetchNews();
-        res.json(result);
+        const isSelfTest = req.get('x-self-test') === 'true';
+        if (req.get('x-self-test') === 'true') {
+            process.env.SELF_TEST = 'true';
+        }
+        const result = await fetchNews(metrics, { selfTest: isSelfTest });
+        const debug = buildDebugInfo(metrics);
+        res.json({ ...result, debug });
     } catch (error) {
-        console.error('Error:', error);
+        logErrorDetails('Fetch news failed', error);
+        const debug = buildDebugInfo(metrics);
         res.status(500).json({
             success: false,
-            error: error.message
+            error: error.message,
+            debug
         });
     }
 });
@@ -1399,7 +1498,7 @@ async function runAutoFetch() {
     try {
         await fetchNews();
     } catch (err) {
-        console.error('Auto fetch failed:', getErrorMessage(err));
+        logErrorDetails('Auto fetch failed', err);
     } finally {
         autoFetchInProgress = false;
     }
@@ -1411,7 +1510,7 @@ if (process.argv.includes('--run-now')) {
             console.log('Fetch complete.');
         })
         .catch((err) => {
-            console.error('Fetch failed:', err);
+            logErrorDetails('Fetch failed', err);
         });
 } else {
     app.listen(PORT, () => {

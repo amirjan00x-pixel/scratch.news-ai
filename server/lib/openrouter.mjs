@@ -1,8 +1,39 @@
+const REQUIRED_ENV_VARS = [
+    'VITE_SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'ADMIN_API_KEY',
+    'API_ALLOWED_ORIGINS',
+    'OPENROUTER_API_KEY'
+];
+
+const missingEnv = REQUIRED_ENV_VARS.filter(
+    (name) => !process.env[name] || !String(process.env[name]).trim()
+);
+
+if (missingEnv.length) {
+    const message = `Missing required environment variables: ${missingEnv.join(', ')}`;
+    console.error(message);
+    throw new Error(message);
+}
+
+const logErrorDetails = (context, err) => {
+    const error = err ?? {};
+    console.error(context, {
+        message: error?.message ?? String(err ?? 'Unknown error'),
+        status: error?.status,
+        responseData: error?.response?.data
+    });
+};
+
+let hasLoggedRawResponse = false;
+let hasLoggedModel = false;
+let hasLoggedKeyLength = false;
+
 // Read at runtime, not module load time
 const getConfig = () => ({
     baseUrl: process.env.OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1',
     apiKey: process.env.OPENROUTER_API_KEY?.trim() || '',
-    defaultModel: process.env.OPENROUTER_DEFAULT_MODEL?.trim() || 'nvidia/nemotron-3-nano-30b-a3b:free',
+    defaultModel: process.env.OPENROUTER_DEFAULT_MODEL?.trim() || 'xiaomi/mimo-v2-flash:free',
     siteUrl: process.env.OPENROUTER_SITE_URL || 'https://github.com/new20/scratch.news-ai',
     appName: process.env.OPENROUTER_APP_NAME || 'scratch.news-ai',
     timeoutMs: Number(process.env.OPENROUTER_TIMEOUT_MS || '20000')
@@ -41,6 +72,15 @@ export async function generateWithOpenRouter({
         throw new Error('generateWithOpenRouter requires a prompt string.');
     }
 
+    if (!hasLoggedModel) {
+        console.log(`OpenRouter model in use: ${useModel}`);
+        hasLoggedModel = true;
+    }
+    if (!hasLoggedKeyLength) {
+        console.log(`OpenRouter keyLength: ${config.apiKey.length}`);
+        hasLoggedKeyLength = true;
+    }
+
     const payload = {
         model: useModel,
         temperature,
@@ -75,12 +115,23 @@ export async function generateWithOpenRouter({
 
         if (!response.ok) {
             const errorBody = await response.text();
+            if (!hasLoggedRawResponse) {
+                console.log('OpenRouter raw response (first call):');
+                console.log(errorBody);
+                hasLoggedRawResponse = true;
+            }
             throw new Error(
                 `OpenRouter request failed (${response.status}): ${errorBody}`
             );
         }
 
-        const data = await response.json();
+        const rawBody = await response.text();
+        if (!hasLoggedRawResponse) {
+            console.log('OpenRouter raw response (first call):');
+            console.log(rawBody);
+            hasLoggedRawResponse = true;
+        }
+        const data = JSON.parse(rawBody);
         const choice = data?.choices?.[0];
         const text =
             choice?.message?.content ||
@@ -94,10 +145,10 @@ export async function generateWithOpenRouter({
         return text.trim();
     } catch (error) {
         if (error.name === 'AbortError') {
-            throw new Error(
-                `Timed out waiting for OpenRouter response.`
-            );
+            logErrorDetails('OpenRouter request timed out', error);
+            throw new Error('Timed out waiting for OpenRouter response.');
         }
+        logErrorDetails('OpenRouter request failed', error);
         throw new Error(`OpenRouter request failed: ${error.message}`);
     }
 }

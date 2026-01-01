@@ -7,6 +7,15 @@ interface ShareButtonsProps {
   url: string;
 }
 
+const logClientError = (context: string, err: unknown) => {
+  const error = err as { message?: string; status?: number; response?: { data?: unknown } };
+  console.error(context, {
+    message: error?.message ?? String(err ?? "Unknown error"),
+    status: error?.status,
+    responseData: error?.response?.data,
+  });
+};
+
 export const ShareButtons = ({ title, url }: ShareButtonsProps) => {
   const encodedTitle = encodeURIComponent(title);
   const encodedUrl = encodeURIComponent(url);
@@ -23,6 +32,7 @@ export const ShareButtons = ({ title, url }: ShareButtonsProps) => {
       await navigator.clipboard.writeText(url);
       toast.success("Link copied to clipboard!");
     } catch (err) {
+      logClientError("Copy link failed", err);
       toast.error("Failed to copy link");
     }
   };

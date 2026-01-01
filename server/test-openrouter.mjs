@@ -1,5 +1,14 @@
 import { generateWithOpenRouter } from './lib/openrouter.mjs';
 
+const logErrorDetails = (context, err) => {
+    const error = err ?? {};
+    console.error(context, {
+        message: error?.message ?? String(err ?? 'Unknown error'),
+        status: error?.status,
+        responseData: error?.response?.data
+    });
+};
+
 async function main() {
     try {
         const prompt =
@@ -13,7 +22,7 @@ async function main() {
         console.log('=== OpenRouter Response ===\n');
         console.log(response);
     } catch (error) {
-        console.error('OpenRouter test failed:', error.message);
+        logErrorDetails('OpenRouter test failed', error);
         process.exit(1);
     }
 }

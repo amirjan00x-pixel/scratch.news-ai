@@ -13,6 +13,22 @@ if (missingEnv.length) {
     process.exit(1);
 }
 
+const logErrorDetails = (context, err) => {
+    const error = err ?? {};
+    console.error(context, {
+        message: error?.message ?? String(err ?? 'Unknown error'),
+        status: error?.status,
+        responseData: error?.response?.data
+    });
+};
+
+const logSupabaseError = (context, data, error) => {
+    console.error(context, {
+        data,
+        error
+    });
+};
+
 const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -47,7 +63,10 @@ async function diagnose() {
         .order('published_at', { ascending: false })
         .limit(200);
 
-    if (error) throw error;
+    if (error) {
+        logSupabaseError('Failed to load recent articles for image diagnosis', data, error);
+        throw error;
+    }
 
     const rows = data ?? [];
     const broken = rows.filter((row) => !isValidRenderableImageUrl(row.image_url));
@@ -89,6 +108,7 @@ async function diagnose() {
                     `- ${ok ? 'OK' : 'BAD'} ${response.status} ${contentType || 'no-content-type'} | ${row.title} | ${url}`
                 );
             } catch (err) {
+                logErrorDetails(`Remote image check failed for ${row.title}`, err);
                 console.log(
                     `- BAD fetch-error | ${row.title} | ${url} | ${err?.message || err}`
                 );
@@ -98,6 +118,6 @@ async function diagnose() {
 }
 
 diagnose().catch((err) => {
-    console.error('Diagnose failed:', err?.message || err);
+    logErrorDetails('Diagnose failed', err);
     process.exit(1);
 });
