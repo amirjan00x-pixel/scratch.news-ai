@@ -1,8 +1,10 @@
+import { Link } from "react-router-dom";
 import { Clock } from "lucide-react";
 import { ShareButtons } from "./ShareButtons";
 import { NewsImage } from "./NewsImage";
 
 interface CompactNewsCardProps {
+  id: string; // Added id prop
   title: string;
   category: string;
   timeAgo: string;
@@ -11,6 +13,7 @@ interface CompactNewsCardProps {
 }
 
 export const CompactNewsCard = ({
+  id,
   title,
   category,
   timeAgo,
@@ -18,10 +21,8 @@ export const CompactNewsCard = ({
   sourceUrl,
 }: CompactNewsCardProps) => {
   return (
-    <a 
-      href={sourceUrl || "#"} 
-      target="_blank" 
-      rel="noopener noreferrer"
+    <Link
+      to={`/news/${id}`}
       className="group cursor-pointer block"
     >
       <div className="rounded overflow-hidden mb-2">
@@ -31,7 +32,7 @@ export const CompactNewsCard = ({
           className="w-full h-24"
         />
       </div>
-      
+
       <span className="text-[9px] font-bold text-primary uppercase tracking-wide">
         {category}
       </span>
@@ -44,9 +45,9 @@ export const CompactNewsCard = ({
           <span>{timeAgo}</span>
         </div>
         <div onClick={(e) => e.preventDefault()}>
-          <ShareButtons title={title} url={sourceUrl || window.location.href} />
+          <ShareButtons title={title} url={`${window.location.origin}/news/${id}`} />
         </div>
       </div>
-    </a>
+    </Link>
   );
 };

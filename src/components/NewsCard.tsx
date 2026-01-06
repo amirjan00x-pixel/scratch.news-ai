@@ -1,8 +1,10 @@
+import { Link } from "react-router-dom";
 import { Clock, ExternalLink } from "lucide-react";
 import { ShareButtons } from "./ShareButtons";
 import { NewsImage } from "./NewsImage";
 
 interface NewsCardProps {
+  id: string; // Added id prop
   title: string;
   summary: string;
   category: string;
@@ -13,6 +15,7 @@ interface NewsCardProps {
 }
 
 export const NewsCard = ({
+  id,
   title,
   summary,
   category,
@@ -54,29 +57,16 @@ export const NewsCard = ({
             <span>{timeAgo}</span>
           </div>
           <div onClick={(e) => e.preventDefault()}>
-            <ShareButtons title={title} url={sourceUrl || window.location.href} />
+            <ShareButtons title={title} url={`${window.location.origin}/news/${id}`} />
           </div>
         </div>
       </div>
     </div>
   );
 
-  if (sourceUrl) {
-    return (
-      <a
-        href={sourceUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group cursor-pointer block"
-      >
-        {content}
-      </a>
-    );
-  }
-
   return (
-    <article className="group block cursor-default">
+    <Link to={`/news/${id}`} className="group cursor-pointer block">
       {content}
-    </article>
+    </Link>
   );
 };

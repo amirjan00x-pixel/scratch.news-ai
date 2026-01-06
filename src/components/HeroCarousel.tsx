@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { Article } from "@/services/newsService";
 import { NewsImage } from "./NewsImage";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom"; // Add internal Link
 
 interface HeroCarouselProps {
   heroArticles: Article[];
@@ -64,15 +65,13 @@ export const HeroCarousel = ({ heroArticles, spotlightArticles }: HeroCarouselPr
             <span>{estimateReadTime(hero.summary)}</span>
           </div>
           <div className="mt-8 flex items-center gap-4">
-            <a
-              href={hero.source_url || "#"}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/news/${hero.id}`}
               className="group relative inline-flex items-center gap-2 rounded-full border border-white/40 px-6 py-3 text-sm font-semibold uppercase tracking-[0.3em]"
             >
               <span className="relative z-10">Read More</span>
               <span className="absolute bottom-0 left-1/2 h-0.5 w-0 -translate-x-1/2 bg-[hsl(var(--neon-cyan))] transition-all duration-300 group-hover:w-full" />
-            </a>
+            </Link>
             <p className="text-xs text-white/60">{hero.source}</p>
           </div>
         </div>
@@ -99,11 +98,9 @@ export const HeroCarousel = ({ heroArticles, spotlightArticles }: HeroCarouselPr
 
       <div className="flex flex-col gap-4">
         {spotlightArticles.slice(0, 3).map((article) => (
-          <a
+          <Link
             key={article.id}
-            href={article.source_url || "#"}
-            target="_blank"
-            rel="noopener noreferrer"
+            to={`/news/${article.id}`}
             className="group flex h-[165px] items-center gap-4 rounded-2xl border border-[#DEE5F0] bg-white p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg"
           >
             <div className="h-full w-[32%] overflow-hidden rounded-xl">
@@ -124,7 +121,7 @@ export const HeroCarousel = ({ heroArticles, spotlightArticles }: HeroCarouselPr
                 {format(new Date(article.published_at), "MMM d, yyyy")} • {article.source}
               </p>
             </div>
-          </a>
+          </Link>
         ))}
       </div>
     </section>

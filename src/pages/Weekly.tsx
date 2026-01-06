@@ -18,7 +18,7 @@ const Weekly = () => {
     queryFn: async () => {
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      
+
       const { data, error } = await supabase
         .from("news_articles")
         .select("*")
@@ -37,7 +37,7 @@ const Weekly = () => {
     queryFn: async () => {
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      
+
       const { data, error } = await supabase
         .from("news_articles")
         .select("*")
@@ -57,7 +57,7 @@ const Weekly = () => {
     queryFn: async () => {
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      
+
       const { data, error } = await supabase
         .from("news_articles")
         .select("*")
@@ -77,7 +77,7 @@ const Weekly = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       <BreakingNewsTicker />
-      
+
       <main className="flex-grow">
         <div className="container mx-auto px-4 py-6">
           <div className="mb-6">
@@ -93,6 +93,7 @@ const Weekly = () => {
                 <h2 className="text-xl font-bold text-foreground">Most Important Story This Week</h2>
               </div>
               <NewsCard
+                id={specialAnalysis.id}
                 title={specialAnalysis.title}
                 summary={specialAnalysis.summary}
                 category={specialAnalysis.category}
@@ -124,6 +125,7 @@ const Weekly = () => {
                       {index + 1}
                     </div>
                     <NewsCard
+                      id={article.id}
                       title={article.title}
                       summary={article.summary}
                       category={article.category}
@@ -162,6 +164,7 @@ const Weekly = () => {
                       {index + 1}
                     </div>
                     <NewsCard
+                      id={tool.id}
                       title={tool.title}
                       summary={tool.summary}
                       category={tool.category}

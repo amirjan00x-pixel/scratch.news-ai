@@ -3,6 +3,8 @@ import { NewsImage } from "./NewsImage";
 import { format } from "date-fns";
 import { Bookmark } from "lucide-react";
 
+import { Link } from "react-router-dom"; // Add import
+
 interface CategorySectionProps {
   title: string;
   articles: Article[];
@@ -28,11 +30,9 @@ export const CategorySection = ({ title, articles }: CategorySectionProps) => {
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {articles.map((article) => (
-          <a
+          <Link
             key={article.id}
-            href={article.source_url || "#"}
-            target="_blank"
-            rel="noopener noreferrer"
+            to={`/news/${article.id}`}
             className="group flex flex-col rounded-[22px] border border-border bg-white p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg"
             style={{ minHeight: 420 }}
           >
@@ -61,7 +61,7 @@ export const CategorySection = ({ title, articles }: CategorySectionProps) => {
                 <Bookmark className="h-4 w-4 text-muted-foreground transition group-hover:text-primary" />
               </div>
             </div>
-          </a>
+          </Link>
         ))}
       </div>
     </section>

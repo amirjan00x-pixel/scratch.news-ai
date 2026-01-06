@@ -1,6 +1,7 @@
 import { Article } from "@/services/newsService";
 import { NewsImage } from "./NewsImage";
 import { format } from "date-fns";
+import { Link } from "react-router-dom"; // Add import
 
 interface FeatureClusterProps {
   feature?: Article;
@@ -17,7 +18,7 @@ export const FeatureCluster = ({ feature, highlights }: FeatureClusterProps) => 
           <div className="h-10 w-1 rounded-full bg-primary" />
           <div>
             <p className="text-xs uppercase tracking-[0.6em] text-muted-foreground">Curated</p>
-            <h2 className="text-3xl font-semibold text-foreground">Editor’s Radar</h2>
+            <h2 className="text-3xl font-semibold text-foreground">Editor's Radar</h2>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -33,15 +34,13 @@ export const FeatureCluster = ({ feature, highlights }: FeatureClusterProps) => 
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <a
-          href={feature.source_url || "#"}
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          to={`/news/${feature.id}`}
           className="group relative overflow-hidden rounded-[28px] border border-border/80 bg-slate-900 text-white shadow-glass-lg lg:col-span-2"
         >
-        <div className="absolute inset-0">
-          <NewsImage
-            src={feature.image_url || ""}
+          <div className="absolute inset-0">
+            <NewsImage
+              src={feature.image_url || ""}
               alt={feature.title}
               className="h-full w-full object-cover"
             />
@@ -64,15 +63,13 @@ export const FeatureCluster = ({ feature, highlights }: FeatureClusterProps) => 
               <span>Read More →</span>
             </div>
           </div>
-        </a>
+        </Link>
 
         <div className="flex flex-col gap-4">
           {highlights.slice(0, 3).map((article) => (
-            <a
+            <Link
               key={article.id}
-              href={article.source_url || "#"}
-              target="_blank"
-              rel="noopener noreferrer"
+              to={`/news/${article.id}`}
               className="group grid grid-cols-[100px_1fr] gap-4 rounded-2xl border border-border bg-white p-4 transition duration-200 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg"
             >
               <div className="overflow-hidden rounded-xl border border-accent/30">
@@ -91,7 +88,7 @@ export const FeatureCluster = ({ feature, highlights }: FeatureClusterProps) => 
                 </h4>
                 <p className="text-sm text-muted-foreground line-clamp-2">{article.summary}</p>
               </div>
-            </a>
+            </Link>
           ))}
         </div>
       </div>

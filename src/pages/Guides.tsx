@@ -29,7 +29,7 @@ const Guides = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       <BreakingNewsTicker />
-      
+
       <main className="flex-grow">
         <div className="container mx-auto px-4 py-6">
           <div className="mb-6">
@@ -48,6 +48,7 @@ const Guides = () => {
               articles.map((article) => (
                 <CompactNewsCard
                   key={article.id}
+                  id={article.id}
                   title={article.title}
                   category={article.category}
                   timeAgo={formatDistanceToNow(new Date(article.published_at), { addSuffix: true })}

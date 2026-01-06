@@ -20,7 +20,7 @@ const Research = () => {
         .eq('category', RESEARCH_CATEGORY)
         .order('published_at', { ascending: false })
         .limit(20);
-      
+
       if (error) throw error;
       return data;
     },
@@ -30,7 +30,7 @@ const Research = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       <BreakingNewsTicker />
-      
+
       <main className="flex-grow">
         <div className="container mx-auto px-4 py-8">
           <div className="mb-8">
@@ -49,6 +49,7 @@ const Research = () => {
               {articles.map((article) => (
                 <NewsCard
                   key={article.id}
+                  id={article.id}
                   title={article.title}
                   summary={article.summary}
                   category={article.category}
