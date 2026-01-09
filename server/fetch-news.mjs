@@ -921,28 +921,37 @@ async function generateAIEditorialPackage({ title, snippet, body, source, catego
     if (!combined) {
         return {
             formattedSummary: sanitizeText(snippet || body || title || ''),
+            content: sanitizeText(snippet || body || title || ''),
             keywords: [],
             highlights: [],
             headline: title
         };
     }
 
-    const prompt = `Analyze this AI news article and return a strict JSON response:
+    const prompt = `Write a deep, authoritative technology report (500-700 words) based on the following AI news metadata.
+      Style: Think Medium, Wired, or The Verge.
+      Tone: Analytical, fluid, and narrative-driven.
 
-Title: ${title}
-Source: ${source}
-Category: ${category || 'Technology'}
-Content: ${combined.slice(0, 1500)}
+      STRICT RULES:
+      - NO BULLET POINTS. Use full paragraphs only.
+      - DO NOT use phrases like "Key Points", "Highlights", "Key Takeaways", or "In summary".
+      - Integrate all facts and data points naturally into the narrative body.
+      - Use (##) for descriptive section headers (not "Highlights").
 
-Return ONLY valid JSON (no code fences, no markdown):
-{
-  "summary": "2-3 sentence concise summary highlighting key points",
-  "headline": "engaging headline that captures the essence",
-  "highlights": ["key point 1", "key point 2", "key point 3"],
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
-}`;
+      Title: ${title}
+      Source: ${source}
+      Category: ${category || 'Technology'}
+      Raw Insight: ${combined.slice(0, 3000)}
 
-    const systemPrompt = `You are an AI news analyst. Analyze articles and return structured JSON with summary, headline, highlights, and tags. Be concise and focus on AI/technology relevance. Never include code fences or markdown in your response.`;
+      Return ONLY a strict JSON object:
+      {
+        "short_summary": "A punchy 1-2 sentence lead for social sharing.",
+        "headline": "A brilliant, clickable, yet professional headline.",
+        "article_body": "A comprehensive long-form piece. Include a strong narrative opening, deep context, analytical body with (##) subheaders, and a final conclusive thought. MANDATORY: The final section MUST be titled '### Why it matters' and provides 2-3 paragraphs of deep strategic analysis.",
+        "tags": ["AI", "Innovation", "Strategic Insights", "Future Tech"]
+      }`;
+
+    const systemPrompt = `You are a premier technology analyst for a publication like Medium or Wired. You never use lists or bullet points. You write in deep, fluid paragraphs that connect facts with strategic analysis. You are forbidden from using words like "Key Points" or "Highlights" - everything must be part of the main story flow. Return raw JSON only.`;
 
     const MAX_RETRIES = 3;
     const BASE_DELAY_MS = 1000;
@@ -952,8 +961,8 @@ Return ONLY valid JSON (no code fences, no markdown):
             const aiResponse = await generateWithOpenRouter({
                 prompt,
                 systemPrompt,
-                temperature: 0.3,
-                maxTokens: 500
+                temperature: 0.5,
+                maxTokens: 1500
             });
 
             // Parse the AI response
@@ -966,15 +975,20 @@ Return ONLY valid JSON (no code fences, no markdown):
 
             const parsed = JSON.parse(cleanResponse);
 
-            const formattedSummary = formatEditorialSummary({
-                summarySentences: [parsed.summary || ''],
-                highlights: parsed.highlights || [],
-                keywords: parsed.tags || [],
-                narrative: `${source} reports on developments in ${category || 'AI technology'}.`
-            });
+            // Construct the full content with markdown
+            let fullContent = parsed.article_body || '';
+
+            // If the LLM didn't provide the body, fallback to constructing it
+            if (!fullContent) {
+                const narrative = `${source} reports on developments in ${category || 'AI technology'}.`;
+                fullContent = (parsed.short_summary || '') + '\n\n' +
+                    (parsed.highlights ? `## Key Highlights\n${parsed.highlights.map(h => `- ${h}`).join('\n')}` : '') + '\n\n' +
+                    `### Why it matters\n${narrative}`;
+            }
 
             return {
-                formattedSummary,
+                formattedSummary: parsed.short_summary || parsed.summary || '',
+                content: fullContent,
                 keywords: parsed.tags || [],
                 highlights: parsed.highlights || [],
                 headline: parsed.headline || title
@@ -1116,7 +1130,7 @@ async function buildArticleRecord(item, feed, metrics) {
         metrics.articlesSummarizedCount += 1;
     }
 
-    const summary = editorialPackage.formattedSummary || cleanSnippet;
+    const summary = editorialPackage.content || editorialPackage.formattedSummary || cleanSnippet;
     const importanceScore = calculateImportanceScore(title, summary, feed.name);
 
     const minImportance = feed.is_research ? 5 : 6;
@@ -1134,7 +1148,7 @@ async function buildArticleRecord(item, feed, metrics) {
 
     return {
         title: title.slice(0, 200),
-        summary,
+        summary, // Store the full long-form article here
         category: feed.category,
         source: feed.name,
         source_url: sourceUrl,
@@ -1185,7 +1199,7 @@ export async function fetchNews(metrics = {
                 isoDate: m.lastModified || now,
                 contentSnippet: `Pipeline: ${m.pipeline_tag || 'unknown'}. Tags: ${(m.tags || [])
                     .slice(0, 6)
-                .join(', ')}.`
+                    .join(', ')}.`
             }));
 
         metrics.articlesFetchedCount += modelItems.length;

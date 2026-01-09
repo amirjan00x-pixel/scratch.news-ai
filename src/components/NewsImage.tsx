@@ -18,7 +18,20 @@ export const NewsImage = ({ src, alt, className, fallbackSrc, ...props }: NewsIm
     const [loaded, setLoaded] = useState(false);
 
     // Default fallback if none provided
-    const defaultFallback = "https://images.unsplash.com/photo-1558494949-ef527443d01d?w=800&q=80";
+    // Default fallbacks for different moods - high quality AI/Abstract Art
+    const techFallbacks = [
+        "https://images.unsplash.com/photo-1620712943543-bcc4628c6757?w=1200&q=80", // AI Abstract
+        "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1200&q=80", // AI Circuit
+        "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=1200&q=80", // Robot
+        "https://images.unsplash.com/photo-1614741118887-7a4ee193a5fa?w=1200&q=80", // Cyber Abstract
+        "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&q=80", // Code/Matrix
+        "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&q=80"  // Globe Tech
+    ];
+
+    const defaultFallback = useMemo(() => {
+        const index = Math.abs(alt?.length || 0) % techFallbacks.length;
+        return techFallbacks[index];
+    }, [alt]);
 
     useEffect(() => {
         setError(!isRenderableImageSrc(normalizedSrc));
