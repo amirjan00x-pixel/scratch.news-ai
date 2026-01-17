@@ -916,7 +916,26 @@ function buildFallbackEditorialPackage({ title, snippet, body }) {
     };
 }
 
-async function generateAIEditorialPackage({ title, snippet, body, source, category }) {
+async function getRecentNewsContext() {
+    try {
+        const { data, error } = await supabase
+            .from('news_articles')
+            .select('title, category, summary')
+            .order('published_at', { ascending: false })
+            .limit(10);
+
+        if (error) return [];
+        return data.map(n => ({
+            title: n.title,
+            category: n.category,
+            snippet: n.summary.slice(0, 150)
+        }));
+    } catch {
+        return [];
+    }
+}
+
+async function generateAIEditorialPackage({ title, snippet, body, source, category, recentContext = [] }) {
     const combined = [snippet, body].filter(Boolean).join(' ').trim();
     if (!combined) {
         return {
@@ -928,15 +947,23 @@ async function generateAIEditorialPackage({ title, snippet, body, source, catego
         };
     }
 
+    const contextStr = recentContext.length
+        ? `RECENT NEWS CONTEXT (Last 24h):\n${recentContext.map(c => `- ${c.title} (${c.category})`).join('\n')}`
+        : "No recent context available.";
+
     const prompt = `Write a deep, authoritative technology report (500-700 words) based on the following AI news metadata.
       Style: Think Medium, Wired, or The Verge.
       Tone: Analytical, fluid, and narrative-driven.
 
+      AGENTIC CONTEXTUAL ANALYSIS:
+      ${contextStr}
+
       STRICT RULES:
-      - NO BULLET POINTS. Use full paragraphs only.
-      - DO NOT use phrases like "Key Points", "Highlights", "Key Takeaways", or "In summary".
-      - Integrate all facts and data points naturally into the narrative body.
-      - Use (##) for descriptive section headers (not "Highlights").
+      - NO BULLET POINTS IN MAIN BODY. Use full paragraphs only.
+      - DO NOT use "Key Points", "Highlights", etc.
+      - EXTRACT ATOMIC FACTS: Identify 3-5 key facts as (Subject - Predicate - Object) triples.
+      - CONFLICT DETECTION: Does this news contradict or strongly support any recent news mentioned above?
+      - REASONING: Explain how this fits into the broader AI trends of this week.
 
       Title: ${title}
       Source: ${source}
@@ -945,10 +972,16 @@ async function generateAIEditorialPackage({ title, snippet, body, source, catego
 
       Return ONLY a strict JSON object:
       {
-        "short_summary": "A punchy 1-2 sentence lead for social sharing.",
-        "headline": "A brilliant, clickable, yet professional headline.",
-        "article_body": "A comprehensive long-form piece. Include a strong narrative opening, deep context, analytical body with (##) subheaders, and a final conclusive thought. MANDATORY: The final section MUST be titled '### Why it matters' and provides 2-3 paragraphs of deep strategic analysis.",
-        "tags": ["AI", "Innovation", "Strategic Insights", "Future Tech"]
+        "short_summary": "Panchy lead...",
+        "headline": "Professional headline...",
+        "article_body": "Long-form narrative with (##) headers. Final section MUST be '### Why it matters'.",
+        "atomic_facts": ["Subject - Predicate - Object", "..."],
+        "graph_data": {
+            "relationships": ["related to X because Y", "conflicts with Z because W"],
+            "trends": "Weekly trend link analysis...",
+            "triples": [{"s": "Subject", "p": "Predicate", "o": "Object"}]
+        },
+        "tags": ["AI", "Innovation"]
       }`;
 
     const systemPrompt = `You are a premier technology analyst for a publication like Medium or Wired. You never use lists or bullet points. You write in deep, fluid paragraphs that connect facts with strategic analysis. You are forbidden from using words like "Key Points" or "Highlights" - everything must be part of the main story flow. Return raw JSON only.`;
@@ -991,7 +1024,8 @@ async function generateAIEditorialPackage({ title, snippet, body, source, catego
                 content: fullContent,
                 keywords: parsed.tags || [],
                 highlights: parsed.highlights || [],
-                headline: parsed.headline || title
+                headline: parsed.headline || title,
+                graph_data: parsed.graph_data || {}
             };
         } catch (error) {
             const isLastAttempt = attempt === MAX_RETRIES;
@@ -1077,7 +1111,7 @@ function toIsoDate(item) {
     return new Date().toISOString();
 }
 
-async function buildArticleRecord(item, feed, metrics) {
+async function buildArticleRecord(item, feed, metrics, options = {}) {
     const title = sanitizeText(item.title) || 'No title';
     const sourceUrl = item.link || item.guid || null;
     if (!sourceUrl || sourceUrl === '#') {
@@ -1113,17 +1147,17 @@ async function buildArticleRecord(item, feed, metrics) {
         return null;
     }
 
-    const editorialPackage = await createEditorialPackage({
+    const editorialPackage = await generateAIEditorialPackage({
         title,
         snippet: cleanSnippet,
         body: articleBody,
         source: feed.name,
-        category: feed.category
+        category: feed.category,
+        recentContext: options.recentContext || []
     });
 
-    // If AI summarization failed after all retries, skip this article
     if (!editorialPackage) {
-        console.log(`Skipped item from ${feed.name}: "${title}" - AI summarization failed after retries.`);
+        console.log(`Skipped item from ${feed.name}: "${title}" - AI failed.`);
         return null;
     }
     if (metrics) {
@@ -1155,7 +1189,8 @@ async function buildArticleRecord(item, feed, metrics) {
         image_url: imageUrl,
         importance_score: importanceScore,
         is_featured: importanceScore >= 9,
-        published_at: toIsoDate(item)
+        published_at: toIsoDate(item),
+        graph_data: editorialPackage.graph_data || {}
     };
 }
 
@@ -1164,10 +1199,14 @@ export async function fetchNews(metrics = {
     articlesSummarizedCount: 0,
     upsertedCount: 0
 }, options = {}) {
+    const recentContext = await getRecentNewsContext();
     const allArticles = [];
     const selfTest = options?.selfTest === true || process.env.SELF_TEST === 'true';
     const maxArticles = selfTest ? 5 : Infinity;
     const maxSourcesPerRun = getMaxSourcesPerRun(selfTest);
+
+    // Merge context into sub-options
+    const recordOptions = { ...options, recentContext };
     const feeds = await buildFeedList();
     const rssFeeds = feeds.filter(
         (feed) => typeof feed.url === 'string' && feed.url.startsWith('http')
@@ -1260,7 +1299,7 @@ export async function fetchNews(metrics = {
             const selectedItems = items.slice(0, 15);
             metrics.articlesFetchedCount += selectedItems.length;
             const candidateArticles = await Promise.all(
-                selectedItems.map((item) => buildArticleRecord(item, feed, metrics))
+                selectedItems.map((item) => buildArticleRecord(item, feed, metrics, recordOptions))
             );
 
             const filteredArticles = candidateArticles.filter(

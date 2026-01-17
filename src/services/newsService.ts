@@ -14,6 +14,11 @@ export interface Article {
     is_featured: boolean;
     published_at: string;
     created_at: string;
+    graph_data?: {
+        relationships?: string[];
+        trends?: string;
+        triples?: Array<{ s: string; p: string; o: string }>;
+    };
 }
 
 export interface NewsFilter {

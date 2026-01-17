@@ -11,7 +11,6 @@ import { ArrowLeft, ExternalLink, Calendar, User, AlertCircle, RefreshCw, FileQu
 import { format } from "date-fns";
 import { NewsImage } from "@/components/NewsImage";
 import { Article } from "@/services/newsService";
-import { TrendingSidebar } from "@/components/TrendingSidebar";
 import { Helmet } from "react-helmet-async";
 import { ShareButtons } from "@/components/ShareButtons";
 import { toast } from "sonner";
@@ -58,12 +57,9 @@ const NewsDetailPage = () => {
     const { id } = useParams<{ id: string }>();
     const location = useLocation();
 
-    // ==== HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS ====
-
-    // Bookmark state (must be declared before any returns)
+    // Bookmark state
     const [isBookmarked, setIsBookmarked] = useState(false);
 
-    // Initialize bookmark state from localStorage
     useEffect(() => {
         if (id) {
             try {
@@ -75,14 +71,11 @@ const NewsDetailPage = () => {
         }
     }, [id]);
 
-    // Toggle bookmark handler
     const toggleBookmark = useCallback(() => {
         if (!id) return;
-
         try {
             const bookmarks = getBookmarks();
             const isCurrentlyBookmarked = bookmarks.includes(id);
-
             if (isCurrentlyBookmarked) {
                 const newBookmarks = bookmarks.filter(b => b !== id);
                 if (saveBookmarks(newBookmarks)) {
@@ -123,80 +116,39 @@ const NewsDetailPage = () => {
         retry: 1,
     });
 
-    // Related News Query - Fetch news from the same category
+    // Related News Query
     const { data: relatedNews } = useQuery({
         queryKey: ['related-news', article?.category, id],
         queryFn: async () => {
-            // First try to get news from the same category
             const { data: categoryNews } = await supabase
                 .from('news_articles')
                 .select('*')
                 .eq('category', article?.category || '')
-                .neq('id', id) // Exclude current article
+                .neq('id', id)
                 .order('published_at', { ascending: false })
-                .limit(10);
-
-            // If we have related news in the same category, return them
-            if (categoryNews && categoryNews.length >= 3) {
-                return categoryNews as Article[];
-            }
-
-            // Fallback: If not enough related articles, get latest trending
-            const { data: fallbackNews } = await supabase
-                .from('news_articles')
-                .select('*')
-                .neq('id', id) // Exclude current article
-                .order('published_at', { ascending: false })
-                .limit(10);
-
-            return (fallbackNews as Article[]) || [];
+                .limit(5);
+            return categoryNews as Article[];
         },
-        enabled: !!article && !!id, // Only run when article is loaded
+        enabled: !!article && !!id,
     });
 
-    // ============ LOADING STATE ============
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[hsl(var(--background))]">
-                <Helmet>
-                    <title>Loading... | {SITE_NAME}</title>
-                </Helmet>
+            <div className="min-h-screen bg-background">
                 <Header />
-                <main className="container max-w-4xl py-12 px-4">
-                    {/* Back button skeleton */}
-                    <Skeleton className="h-10 w-36 mb-8 rounded-full" />
-
-                    {/* Category badge skeleton */}
-                    <div className="flex gap-2 mb-6">
+                <main className="max-w-3xl mx-auto px-6 pt-20">
+                    <Skeleton className="h-10 w-36 mb-12 rounded-full" />
+                    <div className="flex gap-4 mb-8">
                         <Skeleton className="h-6 w-24 rounded-full" />
+                        <Skeleton className="h-6 w-32 rounded-full" />
                     </div>
-
-                    {/* Title skeleton */}
-                    <Skeleton className="h-12 w-full mb-3" />
-                    <Skeleton className="h-12 w-3/4 mb-6" />
-
-                    {/* Meta info skeleton */}
-                    <div className="flex gap-6 mb-8 pb-8 border-b border-border">
-                        <Skeleton className="h-5 w-32" />
-                        <Skeleton className="h-5 w-28" />
-                    </div>
-
-                    {/* Featured image skeleton */}
-                    <Skeleton className="aspect-video w-full rounded-2xl mb-10" />
-
-                    {/* Content skeleton */}
-                    <div className="space-y-4">
-                        <Skeleton className="h-5 w-full" />
-                        <Skeleton className="h-5 w-full" />
-                        <Skeleton className="h-5 w-11/12" />
-                        <Skeleton className="h-5 w-full" />
-                        <Skeleton className="h-5 w-4/5" />
-                    </div>
-
-                    {/* Animated loading indicator */}
-                    <div className="flex items-center justify-center gap-3 mt-12 text-muted-foreground">
-                        <RefreshCw className="h-5 w-5 animate-spin" />
-                        <span className="text-sm">Loading article...</span>
+                    <Skeleton className="h-20 w-full mb-4" />
+                    <Skeleton className="h-20 w-3/4 mb-16" />
+                    <Skeleton className="aspect-[21/10] w-full rounded-[2rem] mb-20" />
+                    <div className="space-y-6">
+                        <Skeleton className="h-6 w-full" />
+                        <Skeleton className="h-6 w-full" />
+                        <Skeleton className="h-6 w-4/5" />
                     </div>
                 </main>
                 <Footer />
@@ -204,332 +156,218 @@ const NewsDetailPage = () => {
         );
     }
 
-    // ============ ERROR / NOT FOUND STATE ============
     if (error || !article) {
-        const isNetworkError = error?.message?.includes('fetch') || error?.message?.includes('network');
-
         return (
-            <div className="min-h-screen bg-[hsl(var(--background))]">
-                <Helmet>
-                    <title>Article Not Found | {SITE_NAME}</title>
-                </Helmet>
-                <Header />
-                <main className="container max-w-2xl py-16 px-4">
-                    <div className="text-center space-y-6">
-                        {/* Error Icon */}
-                        <div className="mx-auto w-20 h-20 rounded-full bg-muted flex items-center justify-center">
-                            {isNetworkError ? (
-                                <AlertCircle className="h-10 w-10 text-destructive" />
-                            ) : (
-                                <FileQuestion className="h-10 w-10 text-muted-foreground" />
-                            )}
-                        </div>
-
-                        {/* Error Title */}
-                        <h1 className="text-3xl font-bold text-foreground">
-                            {isNetworkError ? "Connection Error" : "Article Not Found"}
-                        </h1>
-
-                        {/* Error Description */}
-                        <p className="text-muted-foreground max-w-md mx-auto">
-                            {isNetworkError
-                                ? "We couldn't connect to the server. Please check your internet connection and try again."
-                                : "Sorry, the article you're looking for doesn't exist or may have been removed."
-                            }
-                        </p>
-
-                        {/* Action Buttons */}
-                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-                            {isNetworkError && (
-                                <Button
-                                    onClick={() => refetch()}
-                                    disabled={isRefetching}
-                                    className="gap-2"
-                                >
-                                    <RefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
-                                    {isRefetching ? 'Retrying...' : 'Try Again'}
-                                </Button>
-                            )}
-                            <Button asChild variant={isNetworkError ? "outline" : "default"}>
-                                <Link to="/">
-                                    <ArrowLeft className="mr-2 h-4 w-4" />
-                                    Back to Home
-                                </Link>
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* Suggestions */}
-                    {relatedNews && relatedNews.length > 0 && (
-                        <div className="mt-16 pt-12 border-t border-border">
-                            <h2 className="text-xl font-bold mb-6 text-center">Browse Latest News</h2>
-                            <TrendingSidebar trending={relatedNews.slice(0, 5)} categories={[]} />
-                        </div>
-                    )}
-                </main>
-                <Footer />
+            <div className="min-h-screen bg-background text-center flex flex-col items-center justify-center p-6">
+                <AlertCircle className="h-16 w-16 text-destructive mb-4" />
+                <h1 className="text-3xl font-bold mb-4">Article Not Found</h1>
+                <Button asChild><Link to="/">Return Home</Link></Button>
             </div>
         );
     }
 
-    // Content Logic: Use content if available, fallback to summary
-    const rawContent = article?.content || article?.summary || "Content unavailable. Please read the full article on the source website.";
-    const isShortContent = (rawContent?.length || 0) < 300;
-
-    // Calculate reading time (safe with null check)
+    const rawContent = article.summary || "";
     const readingTime = calculateReadingTime(rawContent);
-
-    // SEO: Prepare meta content
-    const pageTitle = `${article?.title || 'Article'} | ${SITE_NAME}`;
-    const ogImage = article?.image_url || DEFAULT_OG_IMAGE;
-    const ogDescription = article?.summary?.substring(0, 200) || "Read the latest AI news on AI Nexus.";
+    const ogImage = article.image_url || DEFAULT_OG_IMAGE;
+    const ogDescription = rawContent.slice(0, 160) + "...";
 
     return (
-        <div className="min-h-screen bg-[hsl(var(--background))]">
-            {/* Dynamic SEO Meta Tags */}
+        <div className="min-h-screen bg-background scroll-smooth">
             <Helmet>
-                <title>{pageTitle}</title>
+                <title>{article.title} | {SITE_NAME}</title>
                 <meta name="description" content={ogDescription} />
-                {/* Open Graph */}
-                <meta property="og:type" content="article" />
                 <meta property="og:title" content={article.title} />
                 <meta property="og:description" content={ogDescription} />
                 <meta property="og:image" content={ogImage} />
-                <meta property="og:url" content={currentUrl} />
-                <meta property="og:site_name" content={SITE_NAME} />
-                {/* Twitter Card */}
+                <meta property="og:type" content="article" />
                 <meta name="twitter:card" content="summary_large_image" />
                 <meta name="twitter:title" content={article.title} />
                 <meta name="twitter:description" content={ogDescription} />
                 <meta name="twitter:image" content={ogImage} />
-                {/* Canonical URL */}
                 <link rel="canonical" href={currentUrl} />
             </Helmet>
 
             <Header />
 
-            <main className="container max-w-4xl py-6 md:py-10 px-4">
-                {/* Breadcrumb Navigation */}
-                <nav className="flex items-center text-sm text-muted-foreground mb-6" aria-label="Breadcrumb">
-                    <Link to="/" className="hover:text-primary transition-colors">
-                        Home
-                    </Link>
-                    <span className="mx-2 text-border">/</span>
-                    <Link
-                        to={`/?category=${encodeURIComponent(article.category)}`}
-                        className="capitalize hover:text-primary transition-colors"
-                    >
-                        {article.category}
-                    </Link>
-                    <span className="mx-2 text-border">/</span>
-                    <span className="truncate max-w-[180px] sm:max-w-xs md:max-w-md text-foreground font-medium">
-                        {article.title}
-                    </span>
-                </nav>
+            <main className="min-h-screen bg-background">
+                {/* Minimal Header Space */}
+                <div className="max-w-3xl mx-auto px-6 pt-20 pb-12 text-center md:text-left">
+                    <Button asChild variant="ghost" className="mb-12 -ml-4 hover:bg-transparent text-muted-foreground hover:text-primary transition-colors">
+                        <Link to="/">
+                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            Back to Feed
+                        </Link>
+                    </Button>
 
-                {/* Back Button (Mobile-friendly alternative) */}
-                <Button asChild variant="ghost" className="mb-6 pl-0 hover:bg-transparent hover:text-primary">
-                    <Link to="/">
-                        <ArrowLeft className="mr-2 h-4 w-4" />
-                        Back to News
-                    </Link>
-                </Button>
+                    <header className="space-y-8 mb-16">
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+                            <Badge variant="outline" className="rounded-full px-4 py-1 text-[10px] uppercase tracking-[0.2em] font-bold border-primary/20 bg-primary/5 text-primary">
+                                {article.category}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground/60 font-medium tracking-wider">
+                                {format(new Date(article.published_at), "MMMM d, yyyy")}
+                            </span>
+                        </div>
 
-                <div className="grid gap-12 lg:grid-cols-[1fr_320px]">
-                    {/* Main Content Column with entrance animation */}
-                    <article className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        {/* Header Section */}
-                        <header className="space-y-6">
-                            <div className="flex flex-wrap gap-2 items-center">
-                                <Badge variant="secondary" className="text-xs font-semibold px-3 py-1 uppercase tracking-wider">
-                                    {article.category}
-                                </Badge>
-                                {article.is_featured && (
-                                    <Badge variant="default" className="text-xs font-semibold px-3 py-1 uppercase tracking-wider bg-gradient-to-r from-primary to-primary/80">
-                                        ✨ Featured
-                                    </Badge>
-                                )}
-                            </div>
+                        <h1 className="text-5xl md:text-7xl font-black leading-[1.05] tracking-tight text-foreground antialiased text-balance">
+                            {article.title}
+                        </h1>
 
-                            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold leading-[1.15] tracking-tight text-foreground/95 dark:text-foreground/90">
-                                {article.title}
-                            </h1>
-
-                            {/* Metadata - refined styling */}
-                            <div className="flex flex-wrap items-center gap-4 md:gap-6 text-sm text-muted-foreground/80 border-b border-border/60 pb-6">
-                                <div className="flex items-center gap-1.5">
-                                    <Calendar className="h-3.5 w-3.5 text-muted-foreground/60" />
-                                    <span className="text-muted-foreground">{format(new Date(article.published_at), "MMMM d, yyyy")}</span>
-                                </div>
-                                {article.source && (
-                                    <div className="flex items-center gap-1.5">
-                                        <User className="h-3.5 w-3.5 text-muted-foreground/60" />
-                                        <span className="font-medium text-foreground/80">{article.source}</span>
+                        <div className="flex items-center justify-center md:justify-start gap-4 pt-4 border-t border-border/40">
+                            {article.source && (
+                                <div className="flex items-center gap-3">
+                                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center font-bold text-primary border border-primary/10">
+                                        {article.source.charAt(0)}
                                     </div>
-                                )}
-                                {/* Reading Time */}
-                                <div className="flex items-center gap-1.5">
-                                    <Clock className="h-3.5 w-3.5 text-muted-foreground/60" />
-                                    <span className="text-muted-foreground">{readingTime} min read</span>
+                                    <div className="flex flex-col text-left">
+                                        <span className="text-sm font-bold text-foreground leading-none mb-1">{article.source}</span>
+                                        <span className="text-[11px] text-muted-foreground font-medium uppercase tracking-tighter">{readingTime} MIN READ</span>
+                                    </div>
                                 </div>
-                                {/* Share & Bookmark Buttons */}
-                                <div className="ml-auto flex items-center gap-2">
-                                    <button
-                                        onClick={toggleBookmark}
-                                        className={`p-2 rounded-full transition-all duration-200 ${isBookmarked
-                                            ? 'bg-primary/10 text-primary'
-                                            : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-                                            }`}
-                                        aria-label={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
+                            )}
+                        </div>
+                    </header>
+                </div>
+
+                {/* Full Width Image Container */}
+                <div className="max-w-5xl mx-auto px-4 mb-20">
+                    <div className="relative aspect-[21/10] w-full overflow-hidden rounded-[2rem] shadow-2xl shadow-primary/5">
+                        <NewsImage
+                            src={article.image_url || ""}
+                            alt={article.title}
+                            className="h-full w-full object-cover transition-transform duration-1000 hover:scale-105"
+                        />
+                    </div>
+                </div>
+
+                {/* Article Core Content */}
+                <article className="max-w-3xl mx-auto px-6 pb-24">
+                    <div className="prose prose-lg dark:prose-invert max-w-none">
+                        {(() => {
+                            const lines = rawContent.split('\n').filter(l => l.trim());
+                            const elements = [];
+                            let insideWim = false;
+                            let wimBuffer: string[] = [];
+
+                            for (let i = 0; i < lines.length; i++) {
+                                const line = lines[i].trim();
+                                const lowerLine = line.toLowerCase();
+
+                                // Strict removals of analytical boxes/summaries as requested
+                                if (
+                                    lowerLine.includes('key points') ||
+                                    lowerLine.includes('highlights') ||
+                                    lowerLine === 'key takeaways' ||
+                                    lowerLine.includes('atomic facts') ||
+                                    lowerLine.includes('strategic analysis') ||
+                                    lowerLine.includes('contextual link') ||
+                                    lowerLine.includes('reasoning layer') ||
+                                    (line.startsWith('-') && line.length < 60)
+                                ) {
+                                    continue;
+                                }
+
+                                if (lowerLine.startsWith('### why it matters') || lowerLine.startsWith('## why it matters')) {
+                                    insideWim = true;
+                                    continue;
+                                }
+
+                                if (insideWim) {
+                                    wimBuffer.push(line.replace(/^-\s*/, ''));
+                                    continue;
+                                }
+
+                                if (line.startsWith('##')) {
+                                    elements.push(
+                                        <h2 key={i} className="text-3xl font-bold mt-16 mb-8 text-foreground tracking-tight">
+                                            {line.replace(/^#+\s*/, '')}
+                                        </h2>
+                                    );
+                                    continue;
+                                }
+
+                                const cleanParagraph = line.replace(/^-\s*/, '');
+                                const isFirstParagraph = elements.length === 0;
+
+                                elements.push(
+                                    <p
+                                        key={i}
+                                        className={`font-serif text-[22px] leading-[1.85] text-foreground/90 dark:text-foreground/80 mb-10 antialiased ${isFirstParagraph ? 'first-letter:text-7xl first-letter:font-black first-letter:mr-3 first-letter:float-left first-letter:leading-none first-letter:text-primary mt-4' : ''}`}
                                     >
-                                        <Bookmark
-                                            className={`h-4 w-4 transition-all ${isBookmarked ? 'fill-primary' : ''}`}
-                                        />
-                                    </button>
-                                    <ShareButtons title={article.title} url={currentUrl} />
-                                </div>
-                            </div>
-                        </header>
+                                        {cleanParagraph}
+                                    </p>
+                                );
+                            }
 
-                        {/* Featured Image - Enhanced with shadow and rounded corners */}
-                        <div className="relative aspect-video w-full overflow-hidden rounded-3xl border border-border/50 bg-muted shadow-xl shadow-black/5 dark:shadow-black/20 transition-shadow duration-300 hover:shadow-2xl hover:shadow-black/10">
-                            <NewsImage
-                                src={article.image_url || ""}
-                                alt={article.title}
-                                className="h-full w-full object-cover transition-transform duration-700 hover:scale-[1.02]"
-                            />
-                        </div>
-
-                        {/* Content - Improved typography with structural parsing */}
-                        <div className="space-y-6 md:space-y-8">
-                            {(() => {
-                                const lines = rawContent.split('\n').filter(l => l.trim());
-                                const elements = [];
-                                let insideWim = false;
-                                let wimBuffer: string[] = [];
-
-                                for (let i = 0; i < lines.length; i++) {
-                                    const line = lines[i].trim();
-
-                                    // Filter out unwanted "Key Points", "Highlights" or bullet-style headers
-                                    const lowerLine = line.toLowerCase();
-                                    if (
-                                        lowerLine.includes('key points') ||
-                                        lowerLine.includes('highlights') ||
-                                        lowerLine === 'key takeaways' ||
-                                        (line.startsWith('-') && line.length < 50) // Skip short bullet lines that look like list items
-                                    ) {
-                                        continue;
-                                    }
-
-                                    // Detect start of Why It Matters
-                                    if (lowerLine.startsWith('### why it matters') || lowerLine.startsWith('## why it matters')) {
-                                        insideWim = true;
-                                        continue;
-                                    }
-
-                                    if (insideWim) {
-                                        wimBuffer.push(line.replace(/^-\s*/, '')); // Clean bullet from WIM if present
-                                        continue;
-                                    }
-
-                                    // Handle regular headers
-                                    if (line.startsWith('##')) {
-                                        elements.push(
-                                            <h2 key={i} className="mt-12 mb-6 text-2xl md:text-3xl font-bold text-foreground tracking-tight">
-                                                {line.replace(/^#+\s*/, '')}
-                                            </h2>
-                                        );
-                                        continue;
-                                    }
-
-                                    // Handle normal paragraphs (convert leftover bullets to text)
-                                    const cleanParagraph = line.replace(/^-\s*/, '');
-                                    const isFirstParagraph = elements.length === 0;
-                                    elements.push(
-                                        <p
-                                            key={i}
-                                            className={`text-xl leading-relaxed text-foreground/90 dark:text-foreground/80 font-serif antialiased mb-8 ${isFirstParagraph ? 'first-letter:text-6xl first-letter:font-bold first-letter:text-primary first-letter:float-left first-letter:mr-4 first-letter:mt-2' : ''}`}
-                                        >
-                                            {cleanParagraph}
-                                        </p>
-                                    );
-                                }
-
-                                // Append Why It Matters at the end
-                                if (wimBuffer.length > 0) {
-                                    elements.push(
-                                        <div key="wim-block" className="my-16 rounded-3xl border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/40 dark:bg-indigo-900/20 p-8 md:p-12 shadow-xl shadow-indigo-500/5 relative overflow-hidden group">
-                                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                                <Sparkles className="h-24 w-24 text-indigo-600" />
-                                            </div>
-                                            <h3 className="mb-6 flex items-center gap-3 text-2xl font-bold bg-gradient-to-r from-indigo-700 to-primary bg-clip-text text-transparent dark:from-indigo-400 dark:to-primary">
-                                                <Sparkles className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
-                                                Strategic Analysis: Why it Matters
-                                            </h3>
-                                            <div className="space-y-6 relative z-10">
-                                                {wimBuffer.map((line, idx) => (
-                                                    <p key={idx} className="text-xl leading-relaxed text-slate-800 dark:text-slate-300 font-medium">
-                                                        {line}
-                                                    </p>
-                                                ))}
-                                            </div>
+                            // Elegant Blockquote for Why it Matters
+                            if (wimBuffer.length > 0) {
+                                elements.push(
+                                    <div key="wim-quote" className="my-20 pl-10 border-l-[3px] border-primary/40 relative group">
+                                        <div className="absolute -left-1.5 top-0 h-3 w-3 rounded-full bg-primary" />
+                                        <div className="space-y-6">
+                                            {wimBuffer.map((line, idx) => (
+                                                <p key={idx} className="font-serif italic text-2xl md:text-3xl text-foreground/70 leading-relaxed font-light transition-colors group-hover:text-foreground">
+                                                    {line}
+                                                </p>
+                                            ))}
                                         </div>
-                                    );
-                                }
+                                        <div className="mt-8 flex items-center gap-2 text-primary font-bold tracking-widest text-[10px] uppercase opacity-60">
+                                            <Sparkles className="h-3 w-3" />
+                                            Editorial Significance
+                                        </div>
+                                    </div>
+                                );
+                            }
 
-                                return elements;
-                            })()}
-                        </div>
+                            return elements;
+                        })()}
+                    </div>
 
-                        {/* Render "Why it matters" specially if it wasn't caught in the loop properly (e.g. if we want to ensure it's a box)
-                            The previous loop is a bit naive for block-level wrapping. 
-                            Let's try a simpler approach since we control the prompt.
-                            So we can check for that.
-                        */}
-
-
-                        {/* Minimal Source Link */}
-                        <div className="mt-12 flex justify-end">
-                            <Button variant="outline" size="sm" asChild className="rounded-full border-border/50 bg-transparent text-muted-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all">
-                                <a
-                                    href={article.source_url || "#"}
-                                    target="_blank"
-                                    rel="nofollow noopener noreferrer"
-                                    className="flex items-center gap-2 text-xs uppercase tracking-wider font-semibold"
+                    {/* Footer Actions */}
+                    <footer className="mt-24 pt-12 border-t border-border/40">
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={toggleBookmark}
+                                    className={`p-3 rounded-full transition-all border ${isBookmarked
+                                        ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20'
+                                        : 'bg-transparent border-border hover:border-primary text-muted-foreground hover:text-primary'
+                                        }`}
                                 >
-                                    Source: {article.source}
-                                    <ExternalLink className="h-3 w-3" />
+                                    <Bookmark className={`h-5 w-5 ${isBookmarked ? 'fill-current' : ''}`} />
+                                </button>
+                                <ShareButtons title={article.title} url={currentUrl} />
+                            </div>
+
+                            <Button variant="ghost" asChild className="group text-muted-foreground hover:text-primary">
+                                <a href={article.source_url || "#"} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest">
+                                    Original Coverage
+                                    <ExternalLink className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                                 </a>
                             </Button>
                         </div>
-                    </article>
+                    </footer>
+                </article>
 
-                    {/* Sidebar Column */}
-                    <aside className="hidden lg:block space-y-8">
-                        {relatedNews && relatedNews.length > 0 && (
-                            <TrendingSidebar
-                                trending={relatedNews}
-                                categories={[]}
-                                title={`Related in ${article.category}`}
-                                showMustWatch={false}
-                            />
-                        )}
-                    </aside>
-                </div>
-
-                {/* Mobile Sidebar (Visible below content on small screens) */}
-                <div className="lg:hidden mt-10 border-t pt-8">
-                    <h3 className="text-2xl font-bold mb-6">Related in {article.category}</h3>
-                    {relatedNews && relatedNews.length > 0 && (
-                        <TrendingSidebar
-                            trending={relatedNews}
-                            categories={[]}
-                            title={`More in ${article.category}`}
-                            showMustWatch={false}
-                        />
-                    )}
-                </div>
+                {/* Simple Related Content (Minimal) */}
+                <section className="bg-muted/30 py-24 border-t border-border/40">
+                    <div className="max-w-3xl mx-auto px-6">
+                        <h3 className="text-sm font-bold uppercase tracking-[0.3em] text-muted-foreground mb-12">Keep Reading</h3>
+                        <div className="grid gap-16">
+                            {relatedNews?.slice(0, 3).map((item) => (
+                                <Link key={item.id} to={`/news/${item.id}`} className="group block space-y-4">
+                                    <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{item.category}</span>
+                                    <h4 className="text-3xl md:text-4xl font-bold group-hover:text-primary transition-colors leading-tight">
+                                        {item.title}
+                                    </h4>
+                                    <p className="text-muted-foreground line-clamp-2 font-serif text-lg leading-relaxed max-w-2xl">
+                                        {item.summary.split('\n')[0].replace(/^#+\s*/, '')}
+                                    </p>
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
+                </section>
             </main>
 
             <Footer />

@@ -93,4 +93,17 @@ All colors MUST be HSL.
       transform: translateX(-50%);
     }
   }
+
+  .animate-spin-slow {
+    animation: spin 6s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
 }
